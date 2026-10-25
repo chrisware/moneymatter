@@ -13,6 +13,13 @@ export enum TRACKER_STATUSES {
   archived = 'archived',
 }
 
+/** How the overall limit reads: a spending ceiling, an income goal to reach, or an income ceiling to stay under. */
+export enum TRACKER_LIMIT_KINDS {
+  spending = 'spending',
+  incomeTarget = 'income_target',
+  incomeCap = 'income_cap',
+}
+
 /** Per-category limit inside a tracker (`TrackerLines` table). */
 export interface TrackerLineModel {
   id: RecordId;
@@ -41,6 +48,7 @@ export interface TrackerModel extends EntityLogoFields {
   endDate: Date | null;
   /** Decimal; null = no overall limit. */
   limitAmount: number | null;
+  limitKind: TRACKER_LIMIT_KINDS;
   /** Owner's transactions in the date range matching any of `categories` or `tags` get linked automatically. */
   rulesEnabled: boolean;
   /** Rule-added links whose transaction stopped matching are removed on the next sync. */
@@ -78,7 +86,7 @@ export interface TrackerStatsResponse {
     actualExpense: number;
     /** Net difference, income minus expenses. */
     balance: number;
-    /** Percentage used (0-100+), null without an overall limit. */
+    /** Percent of the limit reached (0-100+), null without an overall limit. Net spending for `spending`, net income otherwise. */
     utilizationRate: null | number;
     transactionsCount: number;
     firstTransactionDate: string | null;

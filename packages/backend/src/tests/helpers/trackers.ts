@@ -5,6 +5,7 @@ import {
   type SharePermission,
   type TrackerSpendingStatsResponse,
   type TrackerAiPreWindowDays,
+  type TRACKER_LIMIT_KINDS,
   type TrackerLineModel,
   type TrackerLinePayload,
   type TrackerSuggestionsResponse,
@@ -33,6 +34,7 @@ interface TestCreateTrackerPayload extends EntityLogoWritePayload {
   startDate?: string | Date | null;
   endDate?: string | Date | null;
   limitAmount?: number | null;
+  limitKind?: TRACKER_LIMIT_KINDS;
   aiEnabled?: boolean;
   aiDescription?: string | null;
   aiPreWindowDays?: TrackerAiPreWindowDays;
@@ -47,6 +49,7 @@ interface EditTrackerPayload extends EntityLogoWritePayload {
   startDate?: string | null;
   endDate?: string | null;
   limitAmount?: number | null;
+  limitKind?: TRACKER_LIMIT_KINDS;
   archivePromptDismissed?: boolean;
   aiEnabled?: boolean;
   aiDescription?: string | null;

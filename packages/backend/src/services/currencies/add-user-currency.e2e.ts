@@ -68,6 +68,17 @@ describe('Add user currencies', () => {
     expect(returnedValues[0]!.liveRateUpdate).toBe(true);
   });
 
+  it('keeps a single connection when the same currency is added by concurrent requests', async () => {
+    const responses = await Promise.all(
+      Array.from({ length: 5 }, () => helpers.addUserCurrencies({ currencyCodes: ['EUR'] })),
+    );
+
+    expect(responses.every((res) => res.statusCode === 200)).toBe(true);
+
+    const userCurrencies = await helpers.getUserCurrencies();
+    expect(userCurrencies.filter((item) => item.currencyCode === 'EUR')).toHaveLength(1);
+  });
+
   it('should successfully resolve when trying to add duplicate currencies', async () => {
     // First, add a currency
     const allCurrencies = await helpers.getAllCurrencies();

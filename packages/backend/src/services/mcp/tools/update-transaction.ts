@@ -42,7 +42,7 @@ const inputSchema = {
     .describe('Transfer type'),
   categoryId: recordId().optional().describe('New category ID'),
   time: z.string().optional().describe('New date/time as ISO 8601 string'),
-  note: z.string().optional().nullable().describe('New note. Pass null to clear'),
+  note: z.string().max(1000).optional().nullable().describe('New note. Pass null to clear'),
   payeeId: recordId().nullable().optional().describe('Payee ID to assign. Pass null to clear'),
   destinationAccountId: recordId().optional().describe('For transfers: new destination account ID'),
   destinationAmount: positiveAmountSchema()
@@ -58,7 +58,7 @@ const inputSchema = {
       z.object({
         categoryId: recordId().describe('Category ID for this split portion'),
         amount: positiveAmountSchema().describe('Amount for this split portion (decimal, greater than 0)'),
-        note: z.string().optional().nullable().describe('Optional note for this split'),
+        note: z.string().max(100).optional().nullable().describe('Optional note for this split'),
       }),
     )
     .nullable()

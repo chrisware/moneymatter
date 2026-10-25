@@ -12,7 +12,7 @@ const inputSchema = {
   newBalance: z
     .number()
     .describe('Target balance as a decimal (e.g. 1500.00). An adjustment transaction is created for the diff.'),
-  note: z.string().optional().describe('Optional note to attach to the adjustment transaction.'),
+  note: z.string().max(1000).optional().describe('Optional note to attach to the adjustment transaction.'),
 };
 
 export function registerAdjustAccountBalance(server: McpServer) {

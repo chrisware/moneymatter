@@ -4,6 +4,7 @@ import {
   type EntityLogoWritePayload,
   type RecordId,
   SHARE_PERMISSIONS,
+  type TRACKER_LIMIT_KINDS,
   type TrackerAiPreWindowDays,
 } from '@bt/shared/types';
 import { Money } from '@common/types/money';
@@ -30,6 +31,7 @@ interface EditTrackerPayload extends EntityLogoWritePayload {
   startDate?: string | null;
   endDate?: string | null;
   limitAmount?: Money | null;
+  limitKind?: TRACKER_LIMIT_KINDS;
   archivePromptDismissed?: boolean;
   categoryIds?: string[];
   tagIds?: string[];

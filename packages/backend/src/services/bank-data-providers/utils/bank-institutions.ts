@@ -1,4 +1,6 @@
-export interface BankInstitutionEntry {
+import Fuse from 'fuse.js';
+
+interface BankInstitutionEntry {
   name: string;
   aliases: string[];
   domain: string;
@@ -9,7 +11,7 @@ export interface BankInstitutionEntry {
  * Used to fetch clean logos via logo.dev.
  * Add new entries as users connect to new banks.
  */
-export const BANK_INSTITUTIONS: BankInstitutionEntry[] = [
+const BANK_INSTITUTIONS: BankInstitutionEntry[] = [
   // Poland
   { name: 'PKO Bank Polski', aliases: ['pko bp', 'pko bank'], domain: 'pkobp.pl' },
   { name: 'mBank', aliases: [], domain: 'mbank.pl' },
@@ -68,3 +70,20 @@ export const BANK_INSTITUTIONS: BankInstitutionEntry[] = [
   { name: 'Rabobank', aliases: [], domain: 'rabobank.nl' },
   { name: 'ING', aliases: [], domain: 'ing.com' },
 ];
+
+const MATCH_THRESHOLD = 0.3;
+const fuse = new Fuse(BANK_INSTITUTIONS, { keys: ['name', 'aliases'], threshold: MATCH_THRESHOLD, includeScore: true });
+
+export function getConnectionBankName({ metadata }: { metadata: unknown }): string | null {
+  const bankName = (metadata as Record<string, unknown> | null)?.bankName;
+  return typeof bankName === 'string' ? bankName : null;
+}
+
+export function resolveBankLogoDomain({ bankName }: { bankName: string | null }): string | null {
+  if (!bankName?.trim()) return null;
+
+  const best = fuse.search(bankName)[0];
+  if (!best || (best.score !== undefined && best.score > MATCH_THRESHOLD)) return null;
+
+  return best.item.domain;
+}

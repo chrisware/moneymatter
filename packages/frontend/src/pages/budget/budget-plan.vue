@@ -664,6 +664,7 @@ const openLineDialog = ({
               :plan-id="planId"
               :account-ids="plan?.accountIds ?? []"
               :view="view"
+              :plan-carry-policy="plan?.plan.carryPolicy"
               :archived-lines="archivedLines"
               :history-line-ids="historyLineIds"
               :selected-ids="selection.selectedIds.value"

@@ -17,7 +17,7 @@ const inputSchema = {
       z.object({
         categoryId: recordId().describe('Category ID for this split portion'),
         amount: positiveAmountSchema().describe('Amount for this split portion (decimal, greater than 0)'),
-        note: z.string().optional().nullable().describe('Optional note for this split'),
+        note: z.string().max(100).optional().nullable().describe('Optional note for this split'),
       }),
     )
     .min(1)

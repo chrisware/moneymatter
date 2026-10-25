@@ -94,6 +94,7 @@ export async function transformTrackers({ userId }: { userId: number }): Promise
       periodStart: tracker.startDate ? toDateOnly({ value: tracker.startDate }) : '',
       periodEnd: tracker.endDate ? toDateOnly({ value: tracker.endDate }) : '',
       limitAmount: centsToApiDecimalOrNull(tracker.limitAmount),
+      limitKind: tracker.limitKind,
       currency: baseCurrencyCode,
       categories: (categoriesByTrackerId.get(tracker.id) ?? []).toSorted(),
       spentAmount: spentAmount.toNumber(),

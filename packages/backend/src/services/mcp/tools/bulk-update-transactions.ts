@@ -15,7 +15,7 @@ const inputSchema = {
     .enum(BULK_UPDATE_TAG_MODES)
     .optional()
     .describe('How to apply tagIds: add (default) appends, replace overwrites, remove removes those tags'),
-  note: z.string().optional().describe('Note to set on all transactions'),
+  note: z.string().max(1000).optional().describe('Note to set on all transactions'),
   payeeId: recordId().nullable().optional().describe('Payee ID to assign to all transactions. Pass null to clear'),
 };
 

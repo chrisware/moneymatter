@@ -1,4 +1,4 @@
-import { TRACKER_STATUSES, SHARE_PERMISSIONS, TRANSACTION_TYPES } from '@bt/shared/types';
+import { TRACKER_LIMIT_KINDS, TRACKER_STATUSES, SHARE_PERMISSIONS, TRANSACTION_TYPES } from '@bt/shared/types';
 import { NONEXISTENT_ID } from '@common/lib/record-id-helpers';
 import { describe, expect, it } from '@jest/globals';
 import { ERROR_CODES } from '@js/errors';
@@ -65,6 +65,39 @@ describe('Tracker CRUD', () => {
       const response = await helpers.getTrackers({ raw: true });
       expect(response.length).toBeGreaterThanOrEqual(2);
       expect(response.filter((i) => i.name === trackerName).length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('defaults the limit kind to spending and stores a given one', async () => {
+      const spending = await helpers.createTracker({ name: 'Spending', limitAmount: 100, raw: true });
+      expect(spending.limitKind).toBe(TRACKER_LIMIT_KINDS.spending);
+
+      const income = await helpers.createTracker({
+        name: 'Income',
+        limitAmount: 100,
+        limitKind: TRACKER_LIMIT_KINDS.incomeTarget,
+        raw: true,
+      });
+      expect(income.limitKind).toBe(TRACKER_LIMIT_KINDS.incomeTarget);
+
+      const edited = await helpers.editTracker({
+        id: income.id,
+        params: { limitKind: TRACKER_LIMIT_KINDS.incomeCap },
+        raw: true,
+      });
+      expect(edited.limitKind).toBe(TRACKER_LIMIT_KINDS.incomeCap);
+
+      const renamed = await helpers.editTracker({ id: income.id, params: { name: 'Renamed' }, raw: true });
+      expect(renamed.limitKind).toBe(TRACKER_LIMIT_KINDS.incomeCap);
+    });
+
+    it('rejects an unknown limit kind', async () => {
+      const response = await helpers.createTracker({
+        name: 'Bad kind',
+        limitKind: 'savings' as TRACKER_LIMIT_KINDS,
+        raw: false,
+      });
+
+      expect(response.statusCode).toEqual(ERROR_CODES.ValidationError);
     });
 
     it('fails validation when start date is later than end date', async () => {
@@ -186,6 +219,7 @@ describe('Tracker CRUD', () => {
         { limitAmount: -100 },
         { limitAmount: 0 },
         { startDate: 'not-a-date' },
+        { limitKind: 'savings' as TRACKER_LIMIT_KINDS },
         {
           startDate: addDays(new Date(), 30).toISOString(),
           endDate: new Date().toISOString(),

@@ -1,4 +1,4 @@
-import { type RecordId, TRANSACTION_TYPES } from '@bt/shared/types';
+import { type RecordId, TRACKER_LIMIT_KINDS, TRANSACTION_TYPES } from '@bt/shared/types';
 import { findOrThrowNotFound } from '@common/utils/find-or-throw-not-found';
 import { t } from '@i18n/index';
 import Categories from '@models/categories.model';
@@ -20,7 +20,7 @@ export interface StatsResponse {
     actualIncome: number;
     actualExpense: number;
     balance: number; // Net difference
-    utilizationRate: null | number; // Percentage used (0-100)
+    utilizationRate: null | number; // Percent of the limit reached (0-100+)
     transactionsCount: number;
     firstTransactionDate: string | null; // ISO date string of earliest transaction
     lastTransactionDate: string | null; // ISO date string of latest transaction
@@ -30,6 +30,15 @@ export interface StatsResponse {
   /** Cents of expenses no line matched. */
   otherSpent: number;
 }
+
+type TrackerLimit = { cents: number; kind: TRACKER_LIMIT_KINDS } | null;
+
+const setUtilizationRate = ({ result, limit }: { result: StatsResponse; limit: TrackerLimit }) => {
+  if (!limit) return;
+  const { balance } = result.summary;
+  const reached = limit.kind === TRACKER_LIMIT_KINDS.spending ? Math.max(0, -balance) : Math.max(0, balance);
+  result.summary.utilizationRate = (reached / limit.cents) * 100;
+};
 
 interface ExpenseEntry {
   categoryId: string;
@@ -135,9 +144,11 @@ const getLinkedTransactionsStats = async ({
     attributes: ['id', 'time', 'amount', 'refAmount', 'transactionType', 'refundLinked', 'categoryId', 'userId'],
   });
 
-  const limitAmount = trackerDetails.limitAmount?.toCents() ?? null;
-  const result = aggregateTransactionStats({ transactions, limitAmount });
-  await applyRefundAdjustments({ countedTransactions: transactions, result, limitAmount });
+  const limit: TrackerLimit = trackerDetails.limitAmount
+    ? { cents: trackerDetails.limitAmount.toCents(), kind: trackerDetails.limitKind }
+    : null;
+  const result = aggregateTransactionStats({ transactions, limit });
+  await applyRefundAdjustments({ countedTransactions: transactions, result, limit });
 
   const canonicalize = await buildCategoryCanonicalizer({ ownerUserId: trackerDetails.userId, transactions });
 
@@ -171,11 +182,11 @@ const updateDateRange = (result: StatsResponse, time: Date) => {
 const applyRefundAdjustments = async ({
   countedTransactions,
   result,
-  limitAmount,
+  limit,
 }: {
   countedTransactions: { id: string; refundLinked: boolean }[];
   result: StatsResponse;
-  limitAmount: number | null;
+  limit: TrackerLimit;
 }): Promise<void> => {
   const pairs = await fetchTrackerRefundPairs({ countedTransactions });
   if (pairs.length === 0) return;
@@ -201,10 +212,7 @@ const applyRefundAdjustments = async ({
   }
 
   result.summary.balance = result.summary.actualIncome - result.summary.actualExpense;
-  if (limitAmount !== null) {
-    const netSpending = Math.max(0, -result.summary.balance);
-    result.summary.utilizationRate = (netSpending / limitAmount) * 100;
-  }
+  setUtilizationRate({ result, limit });
 };
 
 /**
@@ -212,10 +220,10 @@ const applyRefundAdjustments = async ({
  */
 const aggregateTransactionStats = ({
   transactions,
-  limitAmount,
+  limit,
 }: {
   transactions: Pick<Transactions.default, 'time' | 'refAmount' | 'transactionType'>[];
-  limitAmount: number | null;
+  limit: TrackerLimit;
 }): StatsResponse => {
   const result = transactions.reduce((acc, curr) => {
     const isExpense = curr.transactionType === TRANSACTION_TYPES.expense;
@@ -234,11 +242,7 @@ const aggregateTransactionStats = ({
   }, getResponseInitialState());
 
   result.summary.transactionsCount = transactions.length;
-
-  if (limitAmount !== null) {
-    const netSpending = Math.max(0, -result.summary.balance);
-    result.summary.utilizationRate = (netSpending / limitAmount) * 100;
-  }
+  setUtilizationRate({ result, limit });
 
   return result;
 };

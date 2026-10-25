@@ -183,6 +183,7 @@ export const EXPORT_DOMAINS: { readonly [N in ExportFileName]: ExportDomain<N> }
       { header: 'PeriodStart', field: 'periodStart', kind: 'date' },
       { header: 'PeriodEnd', field: 'periodEnd', kind: 'date' },
       { header: 'LimitAmount', field: 'limitAmount', kind: 'money' },
+      { header: 'LimitKind', field: 'limitKind', kind: 'text' },
       { header: 'Currency', field: 'currency', kind: 'text' },
       { header: 'Categories', field: 'categories', kind: 'array' },
       { header: 'SpentAmount', field: 'spentAmount', kind: 'money' },

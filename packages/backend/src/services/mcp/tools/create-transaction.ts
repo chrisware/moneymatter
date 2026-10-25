@@ -37,7 +37,7 @@ const inputSchema = {
     .describe('Transfer type. Use not_transfer for regular income/expense'),
   categoryId: recordId().optional().describe('Category ID to assign to this transaction'),
   time: z.string().optional().describe('Transaction date/time as ISO 8601 string. Defaults to now'),
-  note: z.string().optional().describe('Optional note or description for the transaction'),
+  note: z.string().max(1000).optional().describe('Optional note or description for the transaction'),
   destinationAccountId: recordId().optional().describe('For transfers: destination account ID'),
   destinationAmount: positiveAmountSchema()
     .optional()
@@ -52,7 +52,7 @@ const inputSchema = {
       z.object({
         categoryId: recordId().describe('Category ID for this split portion'),
         amount: positiveAmountSchema().describe('Amount for this split portion (decimal, greater than 0)'),
-        note: z.string().optional().nullable().describe('Optional note for this split'),
+        note: z.string().max(100).optional().nullable().describe('Optional note for this split'),
       }),
     )
     .optional()

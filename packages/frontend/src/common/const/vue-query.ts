@@ -39,6 +39,8 @@ export const VUE_QUERY_CACHE_KEYS = Object.freeze({
   // auth
   signupsOpen: ['signups-open'] as const,
   authFeatures: ['auth-features'] as const,
+  // self-host update check
+  latestRelease: ['latest-release'] as const,
   // currencies
   allCurrencies: [VUE_QUERY_GLOBAL_PREFIXES.currencies, 'all'] as const,
   userCurrencies: [VUE_QUERY_GLOBAL_PREFIXES.currencies, 'user'] as const,

@@ -3,6 +3,7 @@ import {
   AI_FEATURE_ENTITLEMENTS,
   TRACKER_STATUSES,
   type EntityLogoWritePayload,
+  type TRACKER_LIMIT_KINDS,
   type TrackerAiPreWindowDays,
 } from '@bt/shared/types';
 import { Money } from '@common/types/money';
@@ -29,6 +30,7 @@ interface CreateTrackerPayload extends EntityLogoWritePayload {
   startDate?: Date | null;
   endDate?: Date | null;
   limitAmount?: Money | null;
+  limitKind?: TRACKER_LIMIT_KINDS;
   aiEnabled?: boolean;
   aiDescription?: string | null;
   aiPreWindowDays?: TrackerAiPreWindowDays;
@@ -56,6 +58,7 @@ export const createTracker = withTransaction(async (payload: CreateTrackerPayloa
     startDate: payload.startDate || null,
     endDate: payload.endDate || null,
     limitAmount: payload.limitAmount ?? null,
+    ...(payload.limitKind && { limitKind: payload.limitKind }),
     rulesEnabled,
     ...(payload.rulesCleanup !== undefined && { rulesCleanup: payload.rulesCleanup }),
     aiEnabled,

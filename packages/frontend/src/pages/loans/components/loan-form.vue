@@ -11,7 +11,7 @@ import { useFormValidation } from '@/composable/form-validator';
 import { useCurrenciesStore } from '@/stores';
 import { type CurrencyModel, LOAN_TYPE, SUPPORTED_LOAN_TYPES } from '@bt/shared/types';
 import { between, helpers, integer, maxLength, required } from '@vuelidate/validators';
-import { differenceInCalendarMonths, format, parseISO } from 'date-fns';
+import { differenceInCalendarMonths, format, isValid, parseISO } from 'date-fns';
 import { InfoIcon } from '@lucide/vue';
 import { storeToRefs } from 'pinia';
 import { computed, reactive } from 'vue';
@@ -213,6 +213,11 @@ const notInFuture = helpers.withMessage(
   (v: unknown) => typeof v !== 'string' || v <= format(new Date(), 'yyyy-MM-dd'),
 );
 
+const startDateNotInFuture = helpers.withMessage(
+  () => t('forms.loan.errors.startDateInFuture'),
+  (v: unknown) => !(v instanceof Date) || !isValid(v) || format(v, 'yyyy-MM-dd') <= format(new Date(), 'yyyy-MM-dd'),
+);
+
 const validationRules = {
   name: { required: helpers.withMessage(() => t('forms.loan.errors.required'), required), maxLength: maxLength(200) },
   currencyCode: { required: helpers.withMessage(() => t('forms.loan.errors.required'), required) },
@@ -221,6 +226,7 @@ const validationRules = {
     nonNegative: nonNegativeMoney,
   },
   balanceAsOf: { notInFuture },
+  startDate: { notInFuture: startDateNotInFuture },
   originalPrincipal: {
     required: helpers.withMessage(() => t('forms.loan.errors.required'), required),
     positive: positiveMoney,
@@ -380,6 +386,7 @@ const submit = () => {
       :label="$t('forms.loan.startDateLabel')"
       :placeholder="$t('forms.loan.startDatePlaceholder')"
       :calendar-options="{ maxDate: new Date() }"
+      :error-message="getFieldErrorMessage('form.startDate')"
     >
       <template #label-after>
         <HintIcon :content="$t('forms.loan.startDateTooltip')" />

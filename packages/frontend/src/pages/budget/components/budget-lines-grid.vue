@@ -16,6 +16,7 @@ import { useAiAllowance } from '@/composable/use-ai-allowance';
 import { useQueryClient } from '@tanstack/vue-query';
 import { cn } from '@/lib/utils';
 import type {
+  BudgetPlanCarryPolicy,
   BudgetPlanLineEntry,
   BudgetPlanLineGroup,
   BudgetPlanPeriodView,
@@ -72,6 +73,7 @@ const props = defineProps<{
   planId: string;
   accountIds: string[];
   view: BudgetPlanPeriodView;
+  planCarryPolicy?: BudgetPlanCarryPolicy;
   archivedLines: BudgetPlanLineEntry[];
   historyLineIds: Set<string>;
   /** In row order; two or more selected lines show the bulk-action bar. */
@@ -442,10 +444,10 @@ const archiveSelected = () => {
           {{ $t('budgetPlans.grid.overrideBadge') }}
         </span>
         <span
-          v-if="line.carryPolicy === 'signed'"
+          v-if="planCarryPolicy && line.carryPolicy !== planCarryPolicy"
           class="text-muted-foreground bg-muted rounded-full px-1.5 py-0.5 text-[10px] font-medium"
         >
-          {{ $t('budgetPlans.grid.carriesDeficit') }}
+          {{ $t(`budgetPlans.grid.carryBadge.${line.carryPolicy}`) }}
         </span>
         <span
           v-if="archivedLineIds.has(line.lineId)"

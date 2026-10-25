@@ -10,6 +10,7 @@ import {
   type TrackerSpendingStatsResponse,
   type TrackerStatsResponse,
   type EntityLogoFields,
+  type TRACKER_LIMIT_KINDS,
   ResourceShareInfo,
 } from '@bt/shared/types';
 import { centsToApiDecimal, centsToApiDecimalOrNull } from '@common/types/money';
@@ -42,6 +43,7 @@ interface TrackerApiResponse extends EntityLogoFields {
   startDate: Date | null;
   endDate: Date | null;
   limitAmount: number | null;
+  limitKind: TRACKER_LIMIT_KINDS;
   rulesEnabled: boolean;
   rulesCleanup: boolean;
   rulesSyncedAt: Date | null;
@@ -105,6 +107,7 @@ export function serializeTracker(tracker: Trackers & { _shareContext?: TrackerSh
     startDate: tracker.startDate,
     endDate: tracker.endDate,
     limitAmount: centsToApiDecimalOrNull(tracker.limitAmount),
+    limitKind: tracker.limitKind,
     rulesEnabled: tracker.rulesEnabled,
     rulesCleanup: tracker.rulesCleanup,
     rulesSyncedAt: tracker.rulesSyncedAt,

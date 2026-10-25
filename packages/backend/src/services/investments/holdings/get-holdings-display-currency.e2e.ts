@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from '@jest/globals';
 import Portfolios from '@models/investments/portfolios.model';
 import Securities from '@models/investments/securities.model';
 import SecurityPricing from '@models/investments/security-pricing.model';
+import UsersCurrencies from '@models/users-currencies.model';
 import * as helpers from '@tests/helpers';
 // USD-based rates served by the mocked rates provider for on-demand date
 // lookups. The security is denominated in the base currency (AED), so the
@@ -116,21 +117,15 @@ describe('Holdings display currency (GET /investments/portfolios/:id/holdings)',
     expect(parseFloat(converted.displayRealizedGainValue!)).toBeCloseTo(0, 2);
   }, 30000);
 
-  it('omits display fields when the display currency is no longer connected to the user', async () => {
+  it('reconnects an orphaned display currency and returns display fields in it', async () => {
     await helpers.addUserCurrencyByCode({ code: 'EUR', raw: true });
     await helpers.updatePortfolio({
       portfolioId: portfolio.id,
       payload: { displayCurrencyCode: 'EUR' },
     });
 
-    // Disconnect the currency through the API; the portfolio keeps the stale
-    // displayCurrencyCode, so holdings must degrade gracefully.
-    const deleteResponse = await helpers.makeRequest({
-      method: 'delete',
-      url: '/user/currency',
-      payload: { currencyCode: 'EUR' },
-    });
-    expect(deleteResponse.statusCode).toBe(200);
+    // The API guard blocks this disconnect; the orphan state exists in production data.
+    await UsersCurrencies.destroy({ where: { currencyCode: 'EUR' } });
 
     await helpers.sleep(DEDUP_CACHE_MS);
 
@@ -143,15 +138,12 @@ describe('Holdings display currency (GET /investments/portfolios/:id/holdings)',
     expect(holdings).toHaveLength(1);
     const holding = holdings[0]!;
 
-    // Native values untouched
     expect(parseFloat(holding.marketValue!)).toBeCloseTo(1100, 1);
-    expect(parseFloat(holding.costBasis)).toBeCloseTo(1000, 1);
+    expect(holding.displayCurrencyCode).toBe('EUR');
+    expect(parseFloat(holding.displayMarketValue!)).toBeCloseTo(1100 * AED_TO_EUR, 1);
 
-    expect(holding.displayCurrencyCode).toBeUndefined();
-    expect(holding.displayMarketValue).toBeUndefined();
-    expect(holding.displayCostBasis).toBeUndefined();
-    expect(holding.displayUnrealizedGainValue).toBeUndefined();
-    expect(holding.displayRealizedGainValue).toBeUndefined();
+    const userCurrencies = await helpers.getUserCurrencies();
+    expect(userCurrencies.map((item) => item.currencyCode)).toContain('EUR');
   });
 
   it('omits display fields when no rate exists for the display currency', async () => {

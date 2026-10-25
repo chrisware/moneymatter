@@ -9,6 +9,7 @@ import Button from '@/components/lib/ui/button/Button.vue';
 import { useNotificationCenter } from '@/components/notification-center';
 import { trackAnalyticsEvent } from '@/lib/posthog';
 import { useOnboardingStore } from '@/stores/onboarding';
+import { TRACKER_LIMIT_KINDS } from '@bt/shared/types';
 import { useMutation, useQueryClient } from '@tanstack/vue-query';
 import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
@@ -23,6 +24,7 @@ import {
   isSmartTrackingIncomplete,
   isTrackerRulesIncomplete,
 } from './build-tracker-payload';
+import LimitKindField from './components/limit-kind-field.vue';
 import SmartTrackingFields from './components/smart-tracking-fields.vue';
 import TrackerRulesFields from './components/tracker-rules-fields.vue';
 import TrackerLogo from './components/tracker-logo.vue';
@@ -33,12 +35,14 @@ const TRACKER_DEFAULT_VALUES: {
   startDate?: Date | null;
   endDate?: Date | null;
   limitAmount?: number | null;
+  limitKind: TRACKER_LIMIT_KINDS;
   logo: LogoSelection | null;
 } = {
   name: null,
   startDate: null,
   endDate: null,
   limitAmount: null,
+  limitKind: TRACKER_LIMIT_KINDS.spending,
   logo: null,
 } as const;
 
@@ -75,13 +79,14 @@ const { isPending: isMutating, mutate: createTrackerItem } = useMutation({
 const isSubmitDisabled = computed(() => isMutating.value || !form.value.name);
 
 const submit = () => {
-  const { name, startDate, endDate, limitAmount, logo } = form.value;
+  const { name, startDate, endDate, limitAmount, limitKind, logo } = form.value;
   if (!name) return;
   showErrors.value = true;
   if (isTrackerRulesIncomplete({ values: rules.value })) return;
   if (isSmartTrackingIncomplete({ values: smartTracking.value })) return;
   createTrackerItem({
     ...buildTrackerPayload({ name, limitAmount, startDate, endDate }),
+    limitKind,
     ...rules.value,
     ...toOptionalLogoPayload({ selection: logo }),
     ...buildSmartTrackingPatch({ values: smartTracking.value }),
@@ -133,10 +138,11 @@ const submit = () => {
       />
     </div>
 
-    <div>
+    <div class="grid gap-3">
+      <LimitKindField v-model="form.limitKind" />
       <InputField
         v-model.number="form.limitAmount"
-        :label="$t('budgets.creation.limitLabel')"
+        :label="$t(`budgets.limitKind.kinds.${form.limitKind}.amountLabel`)"
         :placeholder="$t('budgets.creation.limitPlaceholder')"
       />
     </div>

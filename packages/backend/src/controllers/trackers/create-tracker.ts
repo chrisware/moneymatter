@@ -1,4 +1,4 @@
-import { TRACKER_STATUSES } from '@bt/shared/types';
+import { TRACKER_LIMIT_KINDS, TRACKER_STATUSES } from '@bt/shared/types';
 import { dateBound, decimalMoney, recordArrayIds, withDateOrder } from '@common/lib/zod/custom-types';
 import { logoFieldsShape, logoImageSchema, refineLogoFieldsOnCreate } from '@controllers/common/logo-fields.schema';
 import { createController } from '@controllers/helpers/controller-factory';
@@ -23,6 +23,7 @@ const schema = z.object({
           .refine((m) => m.isPositive(), { message: 'Limit amount must be positive' })
           .nullable()
           .optional(),
+        limitKind: z.nativeEnum(TRACKER_LIMIT_KINDS).optional(),
         ...logoFieldsShape,
         logoImage: logoImageSchema,
         ...smartTrackingFieldsShape,
@@ -43,6 +44,7 @@ export default createController(schema, async ({ user, body }) => {
     startDate,
     endDate,
     limitAmount,
+    limitKind,
     logoDomain,
     logoInitials,
     logoColor,
@@ -64,6 +66,7 @@ export default createController(schema, async ({ user, body }) => {
     startDate: startDate ? new Date(startDate) : undefined,
     endDate: endDate ? new Date(endDate) : undefined,
     limitAmount,
+    limitKind,
     logoDomain,
     logoInitials,
     logoColor,

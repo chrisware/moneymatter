@@ -2645,7 +2645,7 @@ describe('Enable Banking Data Provider E2E', () => {
         url: '/bank-data-providers/sync/status',
       });
       expect(status.body.response.connectionsNeedingReauth).toEqual(
-        expect.arrayContaining([expect.objectContaining({ connectionId })]),
+        expect.arrayContaining([expect.objectContaining({ connectionId, bankLogoDomain: 'nordea.fi' })]),
       );
     });
 

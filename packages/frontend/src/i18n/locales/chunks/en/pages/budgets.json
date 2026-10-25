@@ -14,9 +14,35 @@
       "namePlaceholder": "Enter the name",
       "fromDateLabel": "From date",
       "toDateLabel": "To date",
-      "limitLabel": "Tracker limit",
       "limitPlaceholder": "Enter the limit",
       "submitButton": "Add tracker"
+    },
+    "limitKind": {
+      "label": "Limit type",
+      "whatToChoose": "What to choose?",
+      "guideTitle": "Which limit fits?",
+      "goalNote": "Saving up for something? {goalLink} instead: goals track what you've saved, trackers track what flows in or out.",
+      "goalLink": "Create a goal",
+      "kinds": {
+        "spending": {
+          "label": "Spending",
+          "hint": "Spend at most this much. Warns when spending runs ahead of time passing.",
+          "guide": "For a thing or an event: a trip, a renovation, a year of groceries. Warns when you spend faster than time passes.",
+          "amountLabel": "Limit"
+        },
+        "income_target": {
+          "label": "Income target",
+          "hint": "Earn at least this much. Green while you're on pace, and going over is a win.",
+          "guide": "For money you want to bring in: yearly salary, freelance revenue, rental income. Green while on pace; going over is a win.",
+          "amountLabel": "Target amount"
+        },
+        "income_cap": {
+          "label": "Income cap",
+          "hint": "Stay under this income, e.g. a tax or benefits threshold. Warns as you get close.",
+          "guide": "For income you must stay under: a small-business tax threshold, a benefits or student-aid income limit. Warns as you get close.",
+          "amountLabel": "Cap"
+        }
+      }
     },
     "list": {
       "loadError": "Couldn't load trackers.",
@@ -51,6 +77,7 @@
       "expenses": "Expenses",
       "net": "Net",
       "used": "Used",
+      "earned": "Earned",
       "archive": "Archive",
       "unarchive": "Unarchive",
       "archivedLabel": "Archived",
@@ -114,7 +141,6 @@
     "settings": {
       "nameLabel": "Tracker name",
       "namePlaceholder": "Enter tracker name",
-      "limitLabel": "Tracker limit",
       "limitPlaceholder": "Enter limit amount (optional)",
       "startDateLabel": "Start date",
       "endDateLabel": "End date",
@@ -141,6 +167,10 @@
         "spent": "Spent",
         "left": "Left",
         "overBy": "Over by",
+        "earned": "Earned",
+        "toGo": "To go",
+        "headroom": "Headroom",
+        "aboveTargetBy": "Above target by",
         "income": "Income",
         "expenses": "Expenses",
         "net": "Net",

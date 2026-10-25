@@ -1,4 +1,4 @@
-import { TRACKER_STATUSES, SHARE_PERMISSIONS, TRANSACTION_TYPES } from '@bt/shared/types';
+import { TRACKER_STATUSES, SHARE_PERMISSIONS, TRANSACTION_TYPES, TRACKER_LIMIT_KINDS } from '@bt/shared/types';
 import { NONEXISTENT_ID } from '@common/lib/record-id-helpers';
 import { describe, expect, it } from '@jest/globals';
 import { ERROR_CODES } from '@js/errors';
@@ -19,6 +19,7 @@ describe('POST /trackers/:id/duplicate', () => {
       categoryIds: [food.id, fun.id],
       tagIds: [tag.id],
       limitAmount: 1000,
+      limitKind: TRACKER_LIMIT_KINDS.incomeCap,
       startDate: '2025-03-01T00:00:00Z',
       endDate: '2025-03-31T23:59:59Z',
       raw: true,
@@ -48,6 +49,7 @@ describe('POST /trackers/:id/duplicate', () => {
       rulesCleanup: false,
       status: TRACKER_STATUSES.active,
       limitAmount: 1000,
+      limitKind: TRACKER_LIMIT_KINDS.incomeCap,
       startDate: null,
       endDate: null,
       archivePromptDismissed: false,

@@ -14,6 +14,7 @@ import { useMutation } from '@tanstack/vue-query';
 import { computed, ref, toRef } from 'vue';
 import { useI18n } from 'vue-i18n';
 
+import LimitKindField from '../components/limit-kind-field.vue';
 import SmartTrackingFields from '../components/smart-tracking-fields.vue';
 import TrackerLogo from '../components/tracker-logo.vue';
 import TrackerRulesFields from '../components/tracker-rules-fields.vue';
@@ -51,6 +52,7 @@ const { isOwner } = useTrackerAccess(toRef(() => props.tracker));
 const form = ref({
   name: props.tracker.name,
   limitAmount: props.tracker.limitAmount as string | number | null,
+  limitKind: props.tracker.limitKind,
   startDate: parseTrackerDate(props.tracker.startDate),
   endDate: parseTrackerDate(props.tracker.endDate),
 });
@@ -125,6 +127,7 @@ const save = () =>
     trackerId: props.tracker.id,
     payload: {
       ...basePayload.value,
+      limitKind: form.value.limitKind,
       ...(isOwner.value ? rules.value : {}),
       ...toLogoPatch({ selection: logo.value, stored: storedLogo }),
       ...(isOwner.value ? buildSmartTrackingPatch({ values: smartTracking.value, stored: storedSmartTracking }) : {}),
@@ -173,10 +176,12 @@ const handleSubmit = () => {
       </div>
     </div>
 
+    <LimitKindField v-model="form.limitKind" :disabled="isPending" />
+
     <div class="grid gap-1.5">
       <InputField
         v-model="form.limitAmount"
-        :label="$t('budgets.settings.limitLabel')"
+        :label="$t(`budgets.limitKind.kinds.${form.limitKind}.amountLabel`)"
         :placeholder="$t('budgets.settings.limitPlaceholder')"
         type="number"
         only-positive

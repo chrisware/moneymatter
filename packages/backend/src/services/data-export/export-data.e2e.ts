@@ -606,6 +606,7 @@ describe('Data export (POST /user/data-export)', () => {
       const seeded = rows.find((r) => r.Name === 'Open-ended tracker');
       expect(seeded).toBeDefined();
       expect(seeded?.LimitAmount).toBe('');
+      expect(seeded?.LimitKind).toBe('spending');
     });
   });
 

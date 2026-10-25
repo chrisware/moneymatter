@@ -4,7 +4,7 @@ import { useFormatCurrency } from '@/composable';
 import { useTrackerAccess } from '@/composable/use-tracker-access';
 import { cn } from '@/lib/utils';
 import { ROUTES_NAMES } from '@/routes';
-import { TRACKER_STATUSES, type TrackerModel, type TrackerStatsResponse } from '@bt/shared/types';
+import { TRACKER_LIMIT_KINDS, TRACKER_STATUSES, type TrackerModel, type TrackerStatsResponse } from '@bt/shared/types';
 import { compact } from 'lodash-es';
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
@@ -49,7 +49,7 @@ const utilizationRate = computed<number | null>(() =>
   props.tracker.limitAmount && props.stats ? props.stats.utilizationRate : null,
 );
 
-const tone = computed(() => utilizationClasses({ rate: utilizationRate.value ?? 0 }));
+const tone = computed(() => utilizationClasses({ rate: utilizationRate.value ?? 0, tracker: props.tracker }));
 
 const timeStatus = computed(() =>
   isArchived.value
@@ -147,10 +147,12 @@ const showArchiveSuggestion = computed(() => canManage.value && shouldSuggestArc
       <span v-else-if="utilizationRate === null" class="text-muted-foreground text-sm">—</span>
       <div v-else class="grid gap-1">
         <div class="text-muted-foreground flex justify-between text-sm">
-          <span>{{ $t('budgets.list.used') }}</span>
+          <span>{{
+            tracker.limitKind === TRACKER_LIMIT_KINDS.spending ? $t('budgets.list.used') : $t('budgets.list.earned')
+          }}</span>
           <span :class="cn('font-semibold tabular-nums', tone.text)">{{ Math.round(utilizationRate) }}%</span>
         </div>
-        <UtilizationBar :rate="utilizationRate" class="h-1.25" />
+        <UtilizationBar :rate="utilizationRate" :tracker="tracker" class="h-1.25" />
       </div>
     </div>
 

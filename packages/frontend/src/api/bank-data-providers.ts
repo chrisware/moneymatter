@@ -33,6 +33,7 @@ export interface BankConnection {
   accountsCount: number;
   createdAt: string;
   bankName: string | null;
+  bankLogoDomain: string | null;
 }
 
 interface BankConnectionDetails {

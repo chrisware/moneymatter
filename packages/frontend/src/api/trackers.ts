@@ -4,6 +4,7 @@ import {
   type ResolveTrackerSuggestionsBody,
   type ResolveTrackerSuggestionsResponse,
   type TrackerAiPreWindowDays,
+  type TRACKER_LIMIT_KINDS,
   type TrackerLineModel,
   type TrackerLinePayload,
   TrackerModel,
@@ -29,6 +30,7 @@ interface RulesPayload {
 interface EditTrackerPayload extends EntityLogoWritePayload, SmartTrackingPayload, RulesPayload {
   name?: string;
   limitAmount?: number | null;
+  limitKind?: TRACKER_LIMIT_KINDS;
   startDate?: Date | string | null;
   endDate?: Date | string | null;
   archivePromptDismissed?: boolean;
@@ -47,6 +49,7 @@ interface CreateTrackerPayload extends EntityLogoWritePayload, SmartTrackingPayl
   startDate?: string | null;
   endDate?: string | null;
   limitAmount?: number | null;
+  limitKind?: TRACKER_LIMIT_KINDS;
 }
 
 export const createTracker = async (payload: CreateTrackerPayload): Promise<TrackerModel> =>

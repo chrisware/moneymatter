@@ -1,5 +1,5 @@
 import type { TrackerSpendingGranularity, EntityLogoFields, RecordId } from '@bt/shared/types';
-import { TRANSACTION_TYPES } from '@bt/shared/types';
+import { TRACKER_LIMIT_KINDS, TRANSACTION_TYPES } from '@bt/shared/types';
 import { findOrThrowNotFound } from '@common/utils/find-or-throw-not-found';
 import { t } from '@i18n/index';
 import Categories from '@models/categories.model';
@@ -41,7 +41,7 @@ interface SpendingByCategoryItem {
   categoryId: RecordId;
   name: string;
   color: string;
-  amount: number; // cents, positive (expenses only)
+  amount: number; // cents, positive (the side the tracker measures: income for the income kinds, else expenses)
   children?: SpendingByCategoryItem[];
 }
 
@@ -266,6 +266,8 @@ interface NormalizedTxData {
   currencyCode?: string;
   payeeId?: RecordId | null;
   isExpense: boolean;
+  /** Feeds the category, currency, payee and biggest-day breakdowns: income for the income kinds, else expenses. */
+  isMeasured: boolean;
   categoryId: RecordId | null; // aggregation target (root or top-level target), null = skip category aggregation
   originalCategoryId: RecordId | null; // the actual leaf category
   /** When true, subtract `amount` instead of adding. Used to net out refund pairs. */
@@ -294,7 +296,7 @@ const determineDateRange = ({
 const buildSpendingsByCurrency = ({ txDataList }: { txDataList: NormalizedTxData[] }): SpendingByCurrencyItem[] => {
   const byCurrency = new Map<string, SpendingByCurrencyItem>();
   for (const txData of txDataList) {
-    if (!txData.isExpense || txData.negative || !txData.currencyCode) continue;
+    if (!txData.isMeasured || txData.negative || !txData.currencyCode) continue;
     const entry = byCurrency.get(txData.currencyCode) ?? { currencyCode: txData.currencyCode, amount: 0, refAmount: 0 };
     entry.amount += txData.nativeAmount ?? 0;
     entry.refAmount += txData.amount;
@@ -306,7 +308,7 @@ const buildSpendingsByCurrency = ({ txDataList }: { txDataList: NormalizedTxData
 const buildTopPayees = async ({ txDataList }: { txDataList: NormalizedTxData[] }): Promise<SpendingPayeeItem[]> => {
   const byPayee = new Map<RecordId | null, { amount: number; transactionIds: Set<string> }>();
   for (const txData of txDataList) {
-    if (!txData.isExpense || txData.negative || txData.payeeId === undefined) continue;
+    if (!txData.isMeasured || txData.negative || txData.payeeId === undefined) continue;
     const entry = byPayee.get(txData.payeeId) ?? { amount: 0, transactionIds: new Set<string>() };
     entry.amount += txData.amount;
     entry.transactionIds.add(txData.transactionId);
@@ -338,7 +340,7 @@ const buildTopPayees = async ({ txDataList }: { txDataList: NormalizedTxData[] }
 const findBiggestDay = ({ txDataList }: { txDataList: NormalizedTxData[] }): SpendingStatsResponse['biggestDay'] => {
   const expenseByDay = new Map<string, number>();
   for (const txData of txDataList) {
-    if (!txData.isExpense) continue;
+    if (!txData.isMeasured) continue;
     const day = format(txData.time, 'yyyy-MM-dd');
     expenseByDay.set(day, (expenseByDay.get(day) ?? 0) + (txData.negative ? -txData.amount : txData.amount));
   }
@@ -389,7 +391,7 @@ const aggregateTransactionData = async ({
       }
     }
 
-    if (txData.isExpense && txData.categoryId !== null) {
+    if (txData.isMeasured && txData.categoryId !== null) {
       // For refund subtractions, only adjust an existing bucket — never create a new
       // negative-amount entry for a category that wasn't part of the forward aggregation.
       if (txData.negative && !categoryAmounts.has(txData.categoryId)) continue;
@@ -429,9 +431,11 @@ const aggregateTransactionData = async ({
  */
 const buildRefundAdjustments = ({
   pairs,
+  measuresIncome,
   resolveCategoryBucket,
 }: {
   pairs: TrackerRefundPair[];
+  measuresIncome: boolean;
   resolveCategoryBucket: (categoryId: RecordId) => RecordId | null;
 }): NormalizedTxData[] => {
   const adjustments: NormalizedTxData[] = [];
@@ -442,14 +446,15 @@ const buildRefundAdjustments = ({
     // A split transaction is counted whole under its primary category, so a split-targeted refund nets there too.
     const pushSide = ({ tx }: { tx: TrackerRefundPair['originalTx'] }) => {
       const isExpense = tx.transactionType === TRANSACTION_TYPES.expense;
-      const resolved = isExpense ? resolveCategoryBucket(tx.categoryId) : null;
+      const isMeasured = isExpense !== measuresIncome;
       adjustments.push({
         transactionId: tx.id,
         time: tx.time,
         amount: adjustmentAmount,
         isExpense,
-        categoryId: resolved,
-        originalCategoryId: isExpense ? tx.categoryId : null,
+        isMeasured,
+        categoryId: isMeasured ? resolveCategoryBucket(tx.categoryId) : null,
+        originalCategoryId: isMeasured ? tx.categoryId : null,
         negative: true,
       });
     };
@@ -547,7 +552,9 @@ const getLinkedTransactionsSpendingStats = async ({
     return canonical === OTHER_CATEGORY_ID ? null : canonical;
   };
 
+  const measuresIncome = trackerDetails.limitKind !== TRACKER_LIMIT_KINDS.spending;
   const txDataList: NormalizedTxData[] = transactions.map((tx) => {
+    const isExpense = tx.transactionType === TRANSACTION_TYPES.expense;
     const rootCatId = tx.categoryId
       ? canonicalize(getRootCategoryId({ categoryId: tx.categoryId, categoryMap }))
       : null;
@@ -558,7 +565,8 @@ const getLinkedTransactionsSpendingStats = async ({
       nativeAmount: tx.amount.toCents(),
       currencyCode: tx.currencyCode,
       payeeId: tx.payeeId,
-      isExpense: tx.transactionType === TRANSACTION_TYPES.expense,
+      isExpense,
+      isMeasured: isExpense !== measuresIncome,
       categoryId: rootCatId,
       // Apply the merge map to the child id too — otherwise we'd render duplicate
       // "Groceries" rows under "Food" (one each for owner's and recipient's
@@ -570,6 +578,7 @@ const getLinkedTransactionsSpendingStats = async ({
   const refundPairs = await fetchTrackerRefundPairs({ countedTransactions: transactions });
   const refundAdjustments = buildRefundAdjustments({
     pairs: refundPairs,
+    measuresIncome,
     resolveCategoryBucket: (categoryId) => canonicalize(getRootCategoryId({ categoryId, categoryMap })),
   });
 

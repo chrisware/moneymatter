@@ -7,6 +7,7 @@ export const SUPPORTED_LOCALES = {
   UKRAINIAN: 'uk',
   SPANISH: 'es',
   GERMAN: 'de',
+  FRENCH: 'fr',
   SLOVAK: 'sk',
   INDONESIAN: 'id',
   RUSSIAN: 'ru',
@@ -23,6 +24,7 @@ export const COMMUNITY_LOCALES: ReadonlySet<SupportedLocale> = new Set([
   SUPPORTED_LOCALES.RUSSIAN,
   SUPPORTED_LOCALES.SLOVAK,
   SUPPORTED_LOCALES.GERMAN,
+  SUPPORTED_LOCALES.FRENCH,
 ]);
 
 export const LOCALE_NAMES: Record<SupportedLocale, { native: string; english: string }> = {
@@ -53,6 +55,10 @@ export const LOCALE_NAMES: Record<SupportedLocale, { native: string; english: st
   [SUPPORTED_LOCALES.GERMAN]: {
     native: 'Deutsch',
     english: 'German',
+  },
+  [SUPPORTED_LOCALES.FRENCH]: {
+    native: 'Français',
+    english: 'French',
   },
 };
 

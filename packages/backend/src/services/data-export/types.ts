@@ -127,6 +127,7 @@ export interface TrackerRow {
   periodStart: string;
   periodEnd: string;
   limitAmount: number | null;
+  limitKind: string;
   currency: string;
   categories: string[];
   spentAmount: number;

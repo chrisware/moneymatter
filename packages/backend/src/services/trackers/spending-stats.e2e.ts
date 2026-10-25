@@ -1,4 +1,4 @@
-import { type RecordId, TRANSACTION_TYPES } from '@bt/shared/types';
+import { type RecordId, TRACKER_LIMIT_KINDS, TRANSACTION_TYPES } from '@bt/shared/types';
 import { NONEXISTENT_ID } from '@common/lib/record-id-helpers';
 import { describe, expect, it } from '@jest/globals';
 import { ERROR_CODES } from '@js/errors';
@@ -143,6 +143,73 @@ describe('Get tracker spending stats', () => {
       // Sum of all period income should equal total income
       const totalIncome = result.spendingOverTime.periods.reduce((sum, p) => sum + p.income, 0);
       expect(totalIncome).toBe(1000);
+    });
+
+    it('breaks down income instead of expenses for an income limit', async () => {
+      const account = await helpers.createAccount({ raw: true });
+      const salary = await helpers.addCustomCategory({ name: 'Salary', color: '#00AA00', raw: true });
+      const food = await helpers.addCustomCategory({ name: 'Food', color: '#FF0000', raw: true });
+
+      const createTx = async ({
+        amount,
+        categoryId,
+        transactionType,
+        time,
+      }: {
+        amount: number;
+        categoryId: RecordId;
+        transactionType: TRANSACTION_TYPES;
+        time: string;
+      }) => {
+        const [tx] = await helpers.createTransaction({
+          raw: true,
+          payload: helpers.buildTransactionPayload({
+            accountId: account.id,
+            amount,
+            categoryId,
+            transactionType,
+            time,
+          }),
+        });
+        return tx.id;
+      };
+      const transactionIds = [
+        await createTx({
+          amount: 900,
+          categoryId: salary.id,
+          transactionType: TRANSACTION_TYPES.income,
+          time: '2025-03-10T10:00:00Z',
+        }),
+        await createTx({
+          amount: 400,
+          categoryId: salary.id,
+          transactionType: TRANSACTION_TYPES.income,
+          time: '2025-03-12T10:00:00Z',
+        }),
+        await createTx({
+          amount: 1500,
+          categoryId: food.id,
+          transactionType: TRANSACTION_TYPES.expense,
+          time: '2025-03-15T10:00:00Z',
+        }),
+      ];
+
+      const tracker = await helpers.createTracker({
+        name: 'income-breakdown',
+        limitAmount: 5000,
+        limitKind: TRACKER_LIMIT_KINDS.incomeTarget,
+        startDate: '2025-03-01T00:00:00Z',
+        endDate: '2025-03-31T23:59:59Z',
+        raw: true,
+      });
+      await helpers.addTransactionsToTracker({ id: tracker.id, payload: { transactionIds } });
+
+      const result = await helpers.getTrackerSpendingStats({ id: tracker.id, raw: true });
+
+      expect(result.spendingsByCategory).toHaveLength(1);
+      expect(result.spendingsByCategory[0]).toMatchObject({ categoryId: salary.id, amount: 1300 });
+      expect(result.biggestDay).toEqual({ date: '2025-03-10', expense: 900 });
+      expect(result.topPayees.reduce((sum, payee) => sum + payee.amount, 0)).toBe(1300);
     });
 
     it('returns subcategory breakdown for transactions under child categories', async () => {
@@ -570,6 +637,52 @@ describe('Get tracker spending stats', () => {
       expect(totalExpense).toBe(300);
       expect(totalIncome).toBe(0);
       expect(result.biggestDay).toEqual({ date: '2025-04-10', expense: 300 });
+    }, 60_000);
+
+    it('nets an income refunded by a linked expense out of an income limit breakdown', async () => {
+      const account = await helpers.createAccount({ raw: true });
+      const salary = await helpers.addCustomCategory({ name: 'Salary', color: '#00AA00', raw: true });
+
+      const [incomeTx] = await helpers.createTransaction({
+        raw: true,
+        payload: helpers.buildTransactionPayload({
+          accountId: account.id,
+          amount: 900,
+          categoryId: salary.id,
+          transactionType: TRANSACTION_TYPES.income,
+          time: '2025-04-10T10:00:00Z',
+        }),
+      });
+      const [refundExpenseTx] = await helpers.createTransaction({
+        raw: true,
+        payload: helpers.buildTransactionPayload({
+          accountId: account.id,
+          amount: 300,
+          categoryId: salary.id,
+          transactionType: TRANSACTION_TYPES.expense,
+          time: '2025-04-12T10:00:00Z',
+        }),
+      });
+
+      await helpers.createSingleRefund({ originalTxId: incomeTx.id, refundTxId: refundExpenseTx.id }, true);
+
+      const tracker = await helpers.createTracker({
+        name: 'income-refund-breakdown',
+        limitAmount: 5000,
+        limitKind: TRACKER_LIMIT_KINDS.incomeTarget,
+        startDate: '2025-04-01T00:00:00Z',
+        endDate: '2025-04-30T23:59:59Z',
+        raw: true,
+      });
+      await helpers.addTransactionsToTracker({
+        id: tracker.id,
+        payload: { transactionIds: [incomeTx.id, refundExpenseTx.id] },
+      });
+
+      const result = await helpers.getTrackerSpendingStats({ id: tracker.id, raw: true });
+
+      expect(result.spendingsByCategory).toHaveLength(1);
+      expect(result.spendingsByCategory[0]).toMatchObject({ categoryId: salary.id, amount: 600 });
     }, 60_000);
 
     it('nets a split-targeted refund against the primary category the split transaction is counted under', async () => {

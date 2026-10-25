@@ -9,6 +9,7 @@ import SecurityPricing from '@models/investments/security-pricing.model';
 import * as UsersCurrencies from '@models/users-currencies.model';
 import { calculateRefAmountFromParams } from '@services/calculate-ref-amount.service';
 import { withDeduplication } from '@services/common/with-deduplication';
+import { addUserCurrencies } from '@services/currencies/add-user-currency';
 import { calculateAllGains } from '@services/investments/gains/gains-calculator.utils';
 import * as userExchangeRateService from '@services/user-exchange-rate';
 import { Op, WhereOptions, fn, col } from 'sequelize';
@@ -166,11 +167,11 @@ const getHoldingValuesImpl = async ({ portfolioId, date, userId }: GetHoldingVal
     const userCurrency = await UsersCurrencies.getCurrency({ userId, isDefaultCurrency: true });
     baseCurrencyCode = userCurrency?.currency.code;
 
-    // Display currency applies only while it stays connected to the user; otherwise holdings carry no display fields.
     const portfolio = await Portfolios.findByPk(portfolioId);
     if (portfolio?.displayCurrencyCode) {
-      const connected = await UsersCurrencies.getCurrency({ userId, currencyCode: portfolio.displayCurrencyCode });
-      if (connected) displayCurrencyCode = portfolio.displayCurrencyCode;
+      // Idempotent; reconnects an orphaned display currency so the rate lookups can resolve it.
+      await addUserCurrencies([{ userId, currencyCode: portfolio.displayCurrencyCode }]);
+      displayCurrencyCode = portfolio.displayCurrencyCode;
     }
   }
 
@@ -314,8 +315,8 @@ const getHoldingValuesImpl = async ({ portfolioId, date, userId }: GetHoldingVal
 // Do not call `withTransaction` here because it's fundamentally not compatible
 // with `withDeduplication`. Also on 99.99% `withTransaction` will already be
 // defined on the level above, since this service is not really callable alone
-// It also doesn't really update anything in the DB, so even if it will be called without
-// `withTransaction` and something fails, we don't really need to undo anything, since there's nothing to undo
+// Its only write is the idempotent display-currency reconnect, so a run without
+// `withTransaction` that fails midway leaves nothing that needs undoing.
 
 export const getHoldingValues = withDeduplication(getHoldingValuesImpl, {
   keyGenerator: ({ portfolioId, date, userId }) =>

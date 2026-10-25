@@ -9,7 +9,7 @@ import { getUserId, jsonContent, requireScope } from './helpers';
 const inputSchema = {
   id: recordId().describe('ID of the transaction group to update'),
   name: z.string().optional().describe('New display name for the group'),
-  note: z.string().nullable().optional().describe('New note for the group (pass null to clear)'),
+  note: z.string().max(500).nullable().optional().describe('New note for the group (pass null to clear)'),
 };
 
 export function registerUpdateTransactionGroup(server: McpServer) {

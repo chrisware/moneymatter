@@ -1,4 +1,5 @@
 import {
+  TRACKER_LIMIT_KINDS,
   TRACKER_STATUSES,
   RecordId,
   TRACKER_AI_DEFAULT_PRE_WINDOW_DAYS,
@@ -67,6 +68,13 @@ export default class Trackers extends Model {
 
   @MoneyField({ storage: 'cents', allowNull: true })
   declare limitAmount: Money | null;
+
+  @Column({
+    allowNull: false,
+    defaultValue: TRACKER_LIMIT_KINDS.spending,
+    type: DataType.STRING(20),
+  })
+  limitKind!: TRACKER_LIMIT_KINDS;
 
   @Column({ allowNull: false, defaultValue: false, type: DataType.BOOLEAN })
   aiEnabled!: boolean;

@@ -53,6 +53,7 @@ export const duplicateTracker = withTransaction(async ({ userId, id }: { userId:
     userId,
     status: TRACKER_STATUSES.active,
     limitAmount: source.limitAmount,
+    limitKind: source.limitKind,
     startDate: null,
     endDate: null,
     rulesEnabled: source.rulesEnabled,

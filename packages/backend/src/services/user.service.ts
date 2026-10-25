@@ -259,9 +259,18 @@ export const deleteUserCurrency = withTransaction(
     const userPortfolios = await Portfolios.findAll({
       where: { userId },
       paranoid: false,
-      attributes: ['id'],
+      attributes: ['id', 'displayCurrencyCode', 'deletedAt'],
       raw: true,
     });
+
+    if (userPortfolios.some((p) => !p.deletedAt && p.displayCurrencyCode === currencyCode)) {
+      throw new ValidationError({
+        message: t({
+          key: 'userCurrencies.cannotDeleteCurrencyUsedAsPortfolioDisplay',
+          variables: { currencyCode },
+        }),
+      });
+    }
 
     if (userPortfolios.length) {
       const holdingInCurrency = await Holdings.findOne({
@@ -281,6 +290,12 @@ export const deleteUserCurrency = withTransaction(
         });
       }
     }
+
+    // Only trashed portfolios can still match; they are invisible to the user, so reset instead of blocking.
+    await Portfolios.update(
+      { displayCurrencyCode: null },
+      { where: { userId, displayCurrencyCode: currencyCode }, paranoid: false },
+    );
 
     const defaultCurrency = await UsersCurrencies.getCurrency({
       userId,

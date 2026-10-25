@@ -18,7 +18,7 @@ import { useFormatCurrency } from '@/composable';
 import { useTrackerAccess } from '@/composable/use-tracker-access';
 import { cn } from '@/lib/utils';
 import TrackerSharingPanel from '@/pages/trackers/components/tracker-sharing-panel.vue';
-import { TRACKER_STATUSES, type TrackerModel, RESOURCE_TYPES } from '@bt/shared/types';
+import { TRACKER_LIMIT_KINDS, TRACKER_STATUSES, type TrackerModel, RESOURCE_TYPES } from '@bt/shared/types';
 import { useQuery } from '@tanstack/vue-query';
 import {
   ArchiveIcon,
@@ -150,8 +150,34 @@ const STRIP_LABEL_KEYS = {
   transactions: 'budgets.details.strip.transactions',
 } as const;
 
+const LIMIT_STRIP_LABEL_KEYS: Record<
+  TRACKER_LIMIT_KINDS,
+  { limit: string; spent: string; left: string; over: string }
+> = {
+  [TRACKER_LIMIT_KINDS.spending]: {
+    limit: STRIP_LABEL_KEYS.limit,
+    spent: STRIP_LABEL_KEYS.spent,
+    left: STRIP_LABEL_KEYS.left,
+    over: 'budgets.details.strip.overBy',
+  },
+  [TRACKER_LIMIT_KINDS.incomeTarget]: {
+    limit: 'budgets.limitKind.kinds.income_target.amountLabel',
+    spent: 'budgets.details.strip.earned',
+    left: 'budgets.details.strip.toGo',
+    over: 'budgets.details.strip.aboveTargetBy',
+  },
+  [TRACKER_LIMIT_KINDS.incomeCap]: {
+    limit: 'budgets.limitKind.kinds.income_cap.amountLabel',
+    spent: 'budgets.details.strip.earned',
+    left: 'budgets.details.strip.headroom',
+    over: 'budgets.details.strip.overBy',
+  },
+};
+
 const stripCells = computed<StripCell[]>(() => {
   const limitAmount = props.tracker.limitAmount;
+  const limitKind = props.tracker.limitKind;
+  const limitLabels = LIMIT_STRIP_LABEL_KEYS[limitKind];
   const loaded = summary.value;
   if (!loaded) {
     const keys = limitAmount
@@ -159,7 +185,7 @@ const stripCells = computed<StripCell[]>(() => {
       : (['income', 'expenses', 'net', 'transactions'] as const);
     return keys.map((key) => ({
       key,
-      label: t(STRIP_LABEL_KEYS[key]),
+      label: t({ ...STRIP_LABEL_KEYS, ...limitLabels }[key]),
       value: key === 'limit' && limitAmount ? formatBaseCurrency(limitAmount) : '—',
       isPending: key !== 'limit' && isStatsPending.value,
     }));
@@ -202,25 +228,27 @@ const stripCells = computed<StripCell[]>(() => {
 
   const { spent, left, rate, dailyPace } = getTrackerLimitSummary({
     limitAmount,
+    limitKind,
     summary: loaded,
     timeStatus: timeStatus.value,
   });
   const isOver = left < 0;
+  const overClass = limitKind === TRACKER_LIMIT_KINDS.incomeTarget ? 'text-success-text' : 'text-app-expense-color';
 
   return [
-    { key: 'limit', label: t('budgets.details.strip.limit'), value: formatBaseCurrency(limitAmount) },
+    { key: 'limit', label: t(limitLabels.limit), value: formatBaseCurrency(limitAmount) },
     {
       key: 'spent',
-      label: t('budgets.details.strip.spent'),
+      label: t(limitLabels.spent),
       value: formatBaseCurrency(spent),
-      valueClass: utilizationClasses({ rate }).text,
+      valueClass: utilizationClasses({ rate, tracker: props.tracker }).text,
       hint: `${Math.round(rate)}%`,
     },
     {
       key: 'left',
-      label: isOver ? t('budgets.details.strip.overBy') : t('budgets.details.strip.left'),
+      label: t(isOver ? limitLabels.over : limitLabels.left),
       value: formatBaseCurrency(Math.abs(left)),
-      valueClass: isOver ? 'text-app-expense-color' : undefined,
+      valueClass: isOver ? overClass : undefined,
       hint: dailyPace === null ? null : t('budgets.details.strip.perDay', { amount: formatBaseCurrency(dailyPace) }),
     },
     incomeCell,
@@ -229,7 +257,8 @@ const stripCells = computed<StripCell[]>(() => {
 });
 
 const limitsRequested = ref(route.query.tab === 'limits');
-const showLimitsTab = computed(() => props.tracker.lines.length > 0 || limitsRequested.value);
+const isIncomeKind = computed(() => props.tracker.limitKind !== TRACKER_LIMIT_KINDS.spending);
+const showLimitsTab = computed(() => props.tracker.lines.length > 0 || (!isIncomeKind.value && limitsRequested.value));
 
 const queryTab = TAB_VALUES.find((value) => value === route.query.tab);
 const activeTab = ref<TabValue>(queryTab ?? (showLimitsTab.value ? 'limits' : 'transactions'));
@@ -360,7 +389,7 @@ const chipClass = 'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-
             {{ $t('budgets.list.unarchive') }}
           </Button>
           <Button
-            v-else-if="!showLimitsTab"
+            v-else-if="!showLimitsTab && !isIncomeKind"
             variant="outline"
             size="sm"
             class="hidden @md/tracker:inline-flex"
@@ -392,11 +421,11 @@ const chipClass = 'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-
                 <PencilIcon class="size-4" />
                 {{ $t('budgets.list.edit') }}
               </DropdownMenuItem>
-              <DropdownMenuItem v-if="tracker.lines.length === 0" @select="handleSetLimits">
+              <DropdownMenuItem v-if="!isIncomeKind && tracker.lines.length === 0" @select="handleSetLimits">
                 <LayoutListIcon class="size-4" />
                 {{ $t('budgets.details.actions.setLimits') }}
               </DropdownMenuItem>
-              <DropdownMenuItem v-else @select="isRemoveLimitsOpen = true">
+              <DropdownMenuItem v-else-if="tracker.lines.length" @select="isRemoveLimitsOpen = true">
                 <ListXIcon class="size-4" />
                 {{ $t('budgets.details.actions.removeLimits') }}
               </DropdownMenuItem>

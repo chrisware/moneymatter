@@ -150,7 +150,7 @@ const handleDelete = async () => {
             </span>
           </div>
 
-          <UtilizationBar v-if="stats && row.limit !== null" :rate="row.percent!" class="mt-1.5" />
+          <UtilizationBar v-if="stats && row.limit !== null" :rate="row.percent!" :tracker="tracker" class="mt-1.5" />
         </div>
 
         <div class="hidden justify-end @min-[650px]/lines:flex">

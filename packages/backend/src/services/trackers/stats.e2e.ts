@@ -1,4 +1,4 @@
-import { type RecordId, SHARE_PERMISSIONS, TRANSACTION_TYPES } from '@bt/shared/types';
+import { type RecordId, SHARE_PERMISSIONS, TRACKER_LIMIT_KINDS, TRANSACTION_TYPES } from '@bt/shared/types';
 import { NONEXISTENT_ID } from '@common/lib/record-id-helpers';
 import { describe, expect, it } from '@jest/globals';
 import { ERROR_CODES } from '@js/errors';
@@ -8,6 +8,40 @@ import { getResponseInitialState } from './stats';
 
 const findFood = (categories: Awaited<ReturnType<typeof helpers.getCategoriesList>>) =>
   categories.find((category) => category.key === 'food' && category.parentId === null)!;
+
+const createTrackerWithIncome = async ({
+  limitKind,
+  incomeAmount = 800,
+  expenseAmount = 200,
+}: {
+  limitKind?: TRACKER_LIMIT_KINDS;
+  incomeAmount?: number;
+  expenseAmount?: number;
+}) => {
+  const account = await helpers.createAccount({ raw: true });
+  const [incomeTx] = await helpers.createTransaction({
+    raw: true,
+    payload: helpers.buildTransactionPayload({
+      accountId: account.id,
+      amount: incomeAmount,
+      transactionType: TRANSACTION_TYPES.income,
+    }),
+  });
+  const [expenseTx] = await helpers.createTransaction({
+    raw: true,
+    payload: helpers.buildTransactionPayload({
+      accountId: account.id,
+      amount: expenseAmount,
+      transactionType: TRANSACTION_TYPES.expense,
+    }),
+  });
+  const tracker = await helpers.createTracker({ name: 'kind', limitAmount: 1000, limitKind, raw: true });
+  await helpers.addTransactionsToTracker({
+    id: tracker.id,
+    payload: { transactionIds: [incomeTx.id, expenseTx.id] },
+  });
+  return (await helpers.getTrackerStats({ id: tracker.id, raw: true }))!;
+};
 
 describe('Get tracker stats', () => {
   it('successfully returns stats', async () => {
@@ -78,6 +112,40 @@ describe('Get tracker stats', () => {
     expect((await helpers.getTrackerStats({ id: NONEXISTENT_ID, raw: false })).statusCode).toBe(
       ERROR_CODES.NotFoundError,
     );
+  });
+
+  describe('Limit kinds', () => {
+    it.each([TRACKER_LIMIT_KINDS.incomeTarget, TRACKER_LIMIT_KINDS.incomeCap])(
+      'measures %s limits against net income',
+      async (limitKind) => {
+        const stats = await createTrackerWithIncome({ limitKind });
+        expect(stats.summary.utilizationRate).toBe(60);
+      },
+    );
+
+    it('keeps spending limits at 0% while income outweighs expenses', async () => {
+      const stats = await createTrackerWithIncome({});
+      expect(stats.summary.utilizationRate).toBe(0);
+    });
+
+    it('clamps income_target utilization to 0% when expenses exceed income', async () => {
+      const stats = await createTrackerWithIncome({
+        limitKind: TRACKER_LIMIT_KINDS.incomeTarget,
+        incomeAmount: 200,
+        expenseAmount: 500,
+      });
+      expect(stats.summary.balance).toBe(-300);
+      expect(stats.summary.utilizationRate).toBe(0);
+    });
+
+    it('reports income_target utilization above 100% when net income exceeds the limit', async () => {
+      const stats = await createTrackerWithIncome({
+        limitKind: TRACKER_LIMIT_KINDS.incomeTarget,
+        incomeAmount: 1700,
+        expenseAmount: 200,
+      });
+      expect(stats.summary.utilizationRate).toBe(150);
+    });
   });
 
   describe('Refund handling', () => {
