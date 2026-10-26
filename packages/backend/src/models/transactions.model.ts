@@ -336,7 +336,7 @@ export default class Transactions extends Model {
   })
   declare isPlanned: boolean;
 
-  // Metadata about how this transaction was categorized (manual, ai, mcc_rule, user_rule, subscription_rule, payee_rule)
+  // Metadata about how this transaction was categorized (manual, ai, user_rule, subscription_rule, payee_rule)
   @Column({
     type: DataType.JSONB,
     allowNull: true,

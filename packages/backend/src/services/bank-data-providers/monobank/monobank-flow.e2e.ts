@@ -460,6 +460,23 @@ describe('Monobank Data Provider E2E', () => {
       expect(byNote('WITH NEITHER').externalReference).toBeNull();
     }, 30000);
 
+    it('leaves repeat-MCC transactions uncategorized so AI can pick them up', async () => {
+      const { account } = await helpers.monobank.mockTransactions({
+        transactions: [{ amount: -1000, description: 'CAFE ONE', mcc: 5814 }],
+      });
+      await helpers.monobank.mockTransactions({
+        transactions: [{ amount: -2000, description: 'CAFE TWO', mcc: 5814 }],
+      });
+
+      let rows = await helpers.getTransactions({ accountIds: [account.id], raw: true });
+      for (let attempt = 0; attempt < 10 && rows.length < 2; attempt += 1) {
+        await helpers.sleep(300);
+        rows = await helpers.getTransactions({ accountIds: [account.id], raw: true });
+      }
+      expect(rows).toHaveLength(2);
+      for (const row of rows) expect(row.categorizationMeta).toBeNull();
+    }, 30000);
+
     it('should return 404 for non-existent connection', async () => {
       const result = await helpers.bankDataProviders.connectSelectedAccounts({
         connectionId: generateRandomRecordId(),

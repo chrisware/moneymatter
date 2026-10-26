@@ -9,7 +9,7 @@ const NOW = new Date('2026-05-01T12:00:00.000Z');
 
 const MANUAL: CategorizationMeta = { source: CATEGORIZATION_SOURCE.manual, categorizedAt: '2026-01-01T00:00:00.000Z' };
 const AI: CategorizationMeta = { source: CATEGORIZATION_SOURCE.ai, categorizedAt: '2026-01-01T00:00:00.000Z' };
-const MCC_RULE: CategorizationMeta = { source: CATEGORIZATION_SOURCE.mccRule };
+const PAYEE_RULE: CategorizationMeta = { source: CATEGORIZATION_SOURCE.payeeRule };
 const SYNTHESIZED_MANUAL: CategorizationMeta = {
   source: CATEGORIZATION_SOURCE.manual,
   categorizedAt: NOW.toISOString(),
@@ -182,9 +182,9 @@ describe('planEditMerge – category', () => {
     expect(result).toEqual({ action: 'merge', valuesToMove: {} });
   });
 
-  it('does not treat an mcc-rule categorized orphan as a user edit', () => {
+  it('does not treat a payee-rule categorized orphan as a user edit', () => {
     const result = plan({
-      orphan: side({ categoryId: 'category-groceries', categorizationMeta: MCC_RULE }),
+      orphan: side({ categoryId: 'category-groceries', categorizationMeta: PAYEE_RULE }),
       canonical: side(),
     });
 

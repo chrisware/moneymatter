@@ -201,7 +201,6 @@ global.APP_AUTH_COOKIES = null;
 const SEED_DATA_TABLES = [
   'sequelizemeta', // Migration tracking (SequelizeMeta)
   'currencies', // All world currencies - seeded in migration
-  'merchantcategorycodes', // MCC codes - seeded in migration
   'exchangerates', // Exchange rates - seeded with historical rates (10 days ago)
 ];
 

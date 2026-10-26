@@ -46,7 +46,7 @@ function resolveReferenceTable({ model }: { model: unknown }): string | null {
  * DB table names of every `insert`-mode backup table — the set of user-owned
  * restore targets a FK may legitimately reference. Self-deriving from the
  * registry, so it naturally excludes the global catalogs (Users, Currencies,
- * Securities, MerchantCategoryCodes, …): FKs to those are never guarded.
+ * Securities, …): FKs to those are never guarded.
  */
 function getOwnedTargetTableNames(): Set<string> {
   const names = new Set<string>();

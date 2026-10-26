@@ -215,7 +215,6 @@
       "categorizationSourceValues": {
         "manual": "Вручну",
         "ai": "AI",
-        "mcc_rule": "Правило MCC",
         "user_rule": "Користувацьке правило",
         "subscription_rule": "Правило регулярного платежу",
         "payee_rule": "Правило отримувача"

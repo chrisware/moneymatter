@@ -57,7 +57,6 @@ export interface BackupManifest {
  */
 export type BackupRestoreWarningCode =
   | 'shares_skipped'
-  | 'mcc_code_missing'
   | 'currency_missing'
   | 'unknown_table_ignored'
   | 'unknown_column_dropped'

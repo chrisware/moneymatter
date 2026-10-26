@@ -37,7 +37,6 @@ import SecuritiesModel from './investments/securities.model';
 import SecurityCurrencyCacheModel from './investments/security-currency-cache.model';
 import SecurityPricingModel from './investments/security-pricing.model';
 import LoanDetailsModel from './loan-details.model';
-import MerchantCategoryCodesModel from './merchant-category-codes.model';
 import NotificationsModel from './notifications.model';
 import PayeeAliasesModel from './payee-aliases.model';
 import PayeeIgnoredNamesModel from './payee-ignored-names.model';
@@ -73,7 +72,6 @@ import TransactionTemplatesModel from './transaction-templates.model';
 import TransactionsModel from './transactions.model';
 import TransferSuggestionDismissalsModel from './transfer-suggestion-dismissals.model';
 import UserExchangeRatesModel from './user-exchange-rates.model';
-import UserMerchantCategoryCodesModel from './user-merchant-category-codes.model';
 import UserSettingsModel from './user-settings.model';
 import UsersCurrenciesModel from './users-currencies.model';
 import UsersModel from './users.model';
@@ -108,14 +106,12 @@ const models = [
   CurrenciesModel,
   ExchangeRatesModel,
   FeatureUsagesModel,
-  MerchantCategoryCodesModel,
   NotificationsModel,
   RefundTransactionsModel,
   ResourceSharesModel,
   ShareInvitationsModel,
   TransactionsModel,
   UserExchangeRatesModel,
-  UserMerchantCategoryCodesModel,
   UserSettingsModel,
   UsersCurrenciesModel,
   AccountGroupingModel,

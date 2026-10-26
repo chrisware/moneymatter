@@ -27,7 +27,7 @@ import { z } from 'zod';
  * arithmetic coercion and cross-string mixups. Use this validator anywhere
  * an entity ID enters the system from the API surface.
  *
- * Users, Currencies, ExchangeRates, and MerchantCategoryCodes still use
+ * Users, Currencies, and ExchangeRates still use
  * integer keys and are out of scope for this validator.
  */
 export const recordId = () => z.uuid().transform((v) => v as RecordId);

@@ -85,8 +85,9 @@ function normalizeCategoryTrackers({ parsedByPath }: { parsedByPath: Map<string,
 
 /**
  * Rewrite an older archive's tracker file names, row keys and embedded stored values
- * to the current shapes, in place. Runs after checksum verification (which uses
- * the original paths) and before any file is mapped to a table.
+ * to the current shapes, and drop files of tables that no longer exist, in place.
+ * Runs after checksum verification (which uses the original paths) and before any
+ * file is mapped to a table.
  */
 export function normalizeLegacyArchive({
   formatVersion,
@@ -95,6 +96,11 @@ export function normalizeLegacyArchive({
   formatVersion: number;
   parsedByPath: Map<string, unknown>;
 }): void {
+  // Archives of any version may carry MCC data; `mcc_rule` stamps would lock rows away from AI and payee rules.
+  parsedByPath.delete('data/user-merchant-category-codes.json');
+  for (const row of rowsAt({ parsedByPath, name: 'transactions' })) {
+    if (asObject(row.categorizationMeta)?.source === 'mcc_rule') row.categorizationMeta = null;
+  }
   if (formatVersion > LEGACY_TRACKER_TYPE_VERSION) return;
   if (formatVersion <= LEGACY_TRACKER_NAMING_VERSION) normalizeTrackerNaming({ parsedByPath });
   normalizeCategoryTrackers({ parsedByPath });

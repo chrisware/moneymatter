@@ -1,10 +1,4 @@
-import {
-  ACCOUNT_TYPES,
-  CATEGORIZATION_SOURCE,
-  PAYMENT_TYPES,
-  TRANSACTION_TRANSFER_NATURE,
-  TRANSACTION_TYPES,
-} from '@bt/shared/types';
+import { ACCOUNT_TYPES, PAYMENT_TYPES, TRANSACTION_TRANSFER_NATURE, TRANSACTION_TYPES } from '@bt/shared/types';
 import type { RecordId } from '@bt/shared/types';
 import { ExternalMonobankTransactionResponse } from '@bt/shared/types/external-services';
 import { Money } from '@common/types/money';
@@ -12,9 +6,7 @@ import { logger } from '@js/utils/logger';
 import { SentryTraceData, withQueueProcessSpan, withQueuePublishSpan } from '@js/utils/sentry';
 import Accounts from '@models/accounts.model';
 import BankDataProviderConnections from '@models/bank-data-provider-connections.model';
-import * as MerchantCategoryCodes from '@models/merchant-category-codes.model';
 import { findOneTransaction } from '@models/transactions-query';
-import * as UserMerchantCategoryCodes from '@models/user-merchant-category-codes.model';
 import * as Users from '@models/users.model';
 import { redisClient } from '@root/redis-client';
 import { runPendingLinkAbsorb } from '@services/accounts/absorb-link-residual';
@@ -510,54 +502,12 @@ async function createMonobankTransaction({
     return { mergedIntoPlanned: false };
   }
 
-  // Get or create MCC code
-  let mccRecord = await MerchantCategoryCodes.getByCode({ code: data.mcc });
+  // Leaves `categorizationMeta` null so AI and payee rules can still claim the row.
+  const categoryId = await Users.getUserDefaultCategory({ id: userId });
 
-  if (!mccRecord) {
-    mccRecord = await MerchantCategoryCodes.addCode({ code: data.mcc });
-  }
-
-  // Get or create user MCC mapping to category
-  const userMcc = await UserMerchantCategoryCodes.getByPassedParams({
-    mccId: mccRecord.get('id'),
-    userId,
-  });
-
-  let categoryId: string;
-  // Distinguishes "this categoryId came from the user's MCC mapping" (which
-  // `payee_rule` is allowed to override) from "this is just the default
-  // fallback" (which leaves `categorizationMeta` null so any later source can
-  // claim the row).
-  let mccFromUserMapping = false;
-
-  if (userMcc.length) {
-    categoryId = userMcc[0]!.get('categoryId');
-    mccFromUserMapping = true;
-  } else {
-    // Use default category for this user
-    categoryId = await Users.getUserDefaultCategory({ id: userId });
-
-    // Create mapping for future transactions
-    await UserMerchantCategoryCodes.createEntry({
-      mccId: mccRecord.get('id'),
-      userId,
-      categoryId,
-    });
-  }
-
-  // Create transaction in database. `counterName` is the Monobank-reported
-  // merchant string — surfaced both into `externalData` for audit and as
-  // `rawMerchantName` so the createTransaction pipeline can resolve a Payee.
-  // `categorizationMeta` flags MCC-derived categories so `payee_rule` knows it
-  // may override them; the user-default fallback path leaves meta null on
-  // purpose so any later source can still win.
+  // `counterName` is the Monobank-reported merchant string, kept in
+  // `externalData` for audit and passed as `rawMerchantName` to resolve a Payee.
   const counterName = data.counterName?.trim() ?? '';
-  const mccDerivedMeta = mccFromUserMapping
-    ? {
-        source: CATEGORIZATION_SOURCE.mccRule,
-        categorizedAt: new Date().toISOString(),
-      }
-    : null;
   const createResult = await transactionsService.createTransaction({
     originalId: data.id,
     note: data.description,
@@ -578,7 +528,6 @@ async function createMonobankTransaction({
     transactionType: data.amount > 0 ? TRANSACTION_TYPES.income : TRANSACTION_TYPES.expense,
     paymentType: PAYMENT_TYPES.creditCard,
     categoryId,
-    categorizationMeta: mccDerivedMeta,
     transferNature: TRANSACTION_TRANSFER_NATURE.not_transfer,
     accountType: ACCOUNT_TYPES.monobank,
     rawMerchantName: counterName || null,

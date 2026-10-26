@@ -11,13 +11,11 @@ import Categories from '@models/categories.model';
 import GoalAccounts from '@models/goal-accounts.model';
 import { connection } from '@models/index';
 import PortfolioTransfers from '@models/investments/portfolio-transfers.model';
-import MerchantCategoryCodes from '@models/merchant-category-codes.model';
 import ResourceShares from '@models/resource-shares.model';
 import Tags from '@models/tags.model';
 import Trackers from '@models/trackers.model';
 import TransactionTemplateTags from '@models/transaction-template-tags.model';
 import Transactions from '@models/transactions.model';
-import UserMerchantCategoryCodes from '@models/user-merchant-category-codes.model';
 import Users from '@models/users.model';
 import { BACKUP_TABLES, type BackupFileName } from '@services/backup/registry';
 import * as helpers from '@tests/helpers';
@@ -157,25 +155,6 @@ describe('User data wipe (POST /user/wipe-data)', () => {
     const meRes = await helpers.makeRequest({ method: 'get', url: '/user' });
     expect(meRes.statusCode).toBe(200);
   }, 60_000);
-
-  it('wipes when UserMerchantCategoryCodes rows reference user categories', async () => {
-    // Regression for the FK violation that aborted wipes in production. Now covered by a
-    // CASCADE on UMCC.categoryId (migration 20260603000000), but the test stays as
-    // integration proof that the cascade works end-to-end.
-    const userBefore = await Users.findOne({ where: {} });
-    const userId = userBefore!.id;
-    const category = await helpers.addCustomCategory({ name: 'MCC-linked', color: '#ABCDEF', raw: true });
-    const mcc = await MerchantCategoryCodes.create({ code: '5411', name: 'Grocery stores' });
-    await UserMerchantCategoryCodes.create({ userId, categoryId: category.id, mccId: mcc.id });
-
-    const wipeRes = await helpers.wipeUserData();
-    expect(wipeRes.statusCode).toBe(200);
-
-    // The custom MCC-linked category is gone. Total category count is > 0 because the
-    // wipe reseeds default categories — assert by id, not by total count.
-    expect(await Categories.findByPk(category.id)).toBeNull();
-    expect(await UserMerchantCategoryCodes.findAll({ where: { userId } })).toHaveLength(0);
-  });
 
   it('wipes when PortfolioTransfers has an orphaned transactionId from a prior failed wipe', async () => {
     // Regression for a production failure: a previous wipe aborted mid-flight and left
