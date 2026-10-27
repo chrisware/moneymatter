@@ -1,6 +1,7 @@
 import { API_ERROR_CODES, SUBSCRIPTION_FREQUENCIES, SUBSCRIPTION_TYPES, TRANSACTION_TYPES } from '@bt/shared/types';
 import { describe, expect, it } from '@jest/globals';
 import { ERROR_CODES } from '@js/errors';
+import UsersCurrencies from '@models/users-currencies.model';
 import * as helpers from '@tests/helpers';
 import { ErrorResponse } from '@tests/helpers/common';
 import { subMonths } from 'date-fns';
@@ -617,13 +618,8 @@ describe('Subscriptions', () => {
           raw: true,
         });
 
-        // Sever the auto-created connection to reproduce pre-guard data.
-        await helpers.makeRequest({
-          method: 'delete',
-          url: '/user/currency',
-          payload: { currencyCode: 'UAH' },
-          raw: true,
-        });
+        // The API blocks disconnecting a currency a subscription uses; drop the link directly.
+        await UsersCurrencies.destroy({ where: { currencyCode: 'UAH' } });
 
         const res = await helpers.getSubscriptionsSummary();
         expect(res.statusCode).toBe(422);

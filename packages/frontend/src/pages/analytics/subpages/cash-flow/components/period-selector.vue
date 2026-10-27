@@ -35,8 +35,8 @@ import Button from '@/components/lib/ui/button/Button.vue';
 import { DateSelector, type DateSelectorPreset } from '@/components/lib/ui/date-selector';
 import { cn } from '@/lib/utils';
 import { useEarliestTransactionDate } from '@/composable/data-queries/earliest-transaction-date';
-import { type Period, usePeriodNavigation } from '@/composable/use-period-navigation';
-import { endOfMonth, endOfYear, isAfter, startOfMonth, startOfYear, subMonths, subYears } from 'date-fns';
+import { type Period, getPayPeriod, usePeriodNavigation } from '@/composable/use-period-navigation';
+import { endOfYear, isAfter, startOfYear, subMonths, subYears } from 'date-fns';
 import { CalendarIcon, ChevronLeft, ChevronRight } from '@lucide/vue';
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
@@ -47,8 +47,9 @@ const props = withDefaults(
   defineProps<{
     modelValue: Period;
     variant?: 'ghost' | 'solid';
+    payday?: number;
   }>(),
-  { variant: 'ghost' },
+  { variant: 'ghost', payday: 1 },
 );
 
 const emit = defineEmits<{
@@ -62,6 +63,7 @@ const period = computed({
 
 const { prevPeriod, nextPeriod } = usePeriodNavigation({
   period: () => props.modelValue,
+  payday: () => props.payday,
 });
 
 const { earliestDate } = useEarliestTransactionDate();
@@ -76,27 +78,23 @@ function selectNextPeriod() {
   period.value = nextPeriod.value;
 }
 
+const lastPayPeriods = (count: number) => (): Period => {
+  const current = getPayPeriod({ date: new Date(), payday: props.payday });
+  return { from: subMonths(current.from, count - 1), to: current.to };
+};
+
 const quickPresets = computed<DateSelectorPreset[]>(() => [
   {
     label: t('analytics.cashFlow.periods.last3Months'),
-    getValue: () => ({
-      from: startOfMonth(subMonths(new Date(), 2)),
-      to: endOfMonth(new Date()),
-    }),
+    getValue: lastPayPeriods(3),
   },
   {
     label: t('analytics.cashFlow.periods.last6Months'),
-    getValue: () => ({
-      from: startOfMonth(subMonths(new Date(), 5)),
-      to: endOfMonth(new Date()),
-    }),
+    getValue: lastPayPeriods(6),
   },
   {
     label: t('analytics.cashFlow.periods.last12Months'),
-    getValue: () => ({
-      from: startOfMonth(subMonths(new Date(), 11)),
-      to: endOfMonth(new Date()),
-    }),
+    getValue: lastPayPeriods(12),
   },
   {
     label: t('analytics.cashFlow.periods.thisYear'),

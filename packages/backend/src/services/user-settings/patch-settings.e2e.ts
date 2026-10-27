@@ -347,6 +347,9 @@ describe('Patch user settings', () => {
     };
 
     const invalidPatches: Record<string, unknown>[] = [
+      { payday: 0 },
+      { payday: 29 },
+      { payday: 1.5 },
       { savedPivotViews: [{ id: generateRandomRecordId(), name: '', config: validPivotConfig }] },
       { savedPivotViews: [{ id: generateRandomRecordId(), name: 'a'.repeat(121), config: validPivotConfig }] },
       { savedTransactionViews: [{ id: generateRandomRecordId(), name: '', filters: {} }] },

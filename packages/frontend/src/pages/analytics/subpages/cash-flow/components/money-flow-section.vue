@@ -1,7 +1,12 @@
 <template>
   <div ref="rootRef" class="border-border bg-card space-y-7.5 rounded-lg border p-4">
     <div :class="cn('flex items-center gap-3', isCompact ? 'justify-between' : 'flex-wrap justify-between')">
-      <PeriodSelector v-model="period" variant="solid" :class="isCompact && 'min-w-0 flex-1'" />
+      <PeriodSelector
+        v-model="period"
+        variant="solid"
+        :payday="userSettings?.payday"
+        :class="isCompact && 'min-w-0 flex-1'"
+      />
 
       <DesktopOnlyTooltip v-if="isCompact" :content="$t('analytics.cashFlow.composition.settings')">
         <span class="inline-flex">

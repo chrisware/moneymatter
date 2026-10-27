@@ -19,7 +19,7 @@
     >
       <div class="grid grid-cols-[1fr_auto_1fr] items-center">
         <div />
-        <PeriodSelector v-model="currentPeriod" />
+        <PeriodSelector v-model="currentPeriod" :payday="payday" />
         <DashboardEditToolbar
           class="hidden justify-self-end md:flex"
           :is-edit-mode="isEditMode"
@@ -60,11 +60,13 @@
 import RecoveryMethodBanner from '@/components/banners/recovery-method-banner.vue';
 import PageWrapper from '@/components/common/page-wrapper.vue';
 import DashboardOnboarding from '@/components/widgets/dashboard-onboarding.vue';
+import { useUserSettings } from '@/composable/data-queries/user-settings';
+import { getPayPeriod } from '@/composable/use-period-navigation';
 import { cn } from '@/lib/utils';
 import { useAccountsStore } from '@/stores';
-import { endOfMonth, parseISO, startOfMonth } from 'date-fns';
+import { isSameDay, parseISO } from 'date-fns';
 import { storeToRefs } from 'pinia';
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
 import DashboardEditToolbar from './components/dashboard-edit-toolbar.vue';
@@ -85,7 +87,10 @@ defineOptions({
 const gridRef = ref<InstanceType<typeof DashboardGrid> | null>(null);
 const isEditMode = computed(() => gridRef.value?.isEditMode ?? false);
 
-// Get initial period from URL or default to current month
+const { data: userSettings } = useUserSettings();
+const payday = computed(() => userSettings.value?.payday ?? 1);
+
+// Get initial period from URL or default to the current pay period
 const getInitialPeriod = (): Period => {
   const { from, to } = route.query;
   if (from && to) {
@@ -94,11 +99,16 @@ const getInitialPeriod = (): Period => {
       to: parseISO(to as string),
     };
   }
-  return {
-    from: startOfMonth(new Date()),
-    to: endOfMonth(new Date()),
-  };
+  return getPayPeriod({ date: new Date(), payday: payday.value });
 };
 
 const currentPeriod = ref<Period>(getInitialPeriod());
+
+// Settings can arrive after mount; move the period only if it is still the old default.
+watch(payday, (newPayday, oldPayday) => {
+  const oldDefault = getPayPeriod({ date: new Date(), payday: oldPayday });
+  if (isSameDay(currentPeriod.value.from, oldDefault.from) && isSameDay(currentPeriod.value.to, oldDefault.to)) {
+    currentPeriod.value = getPayPeriod({ date: new Date(), payday: newPayday });
+  }
+});
 </script>

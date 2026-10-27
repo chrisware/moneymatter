@@ -1,4 +1,4 @@
-import { ASSET_CLASS, SECURITY_PROVIDER } from '@bt/shared/types';
+import { API_ERROR_CODES, ASSET_CLASS, SECURITY_PROVIDER } from '@bt/shared/types';
 import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
 import { ERROR_CODES } from '@js/errors';
 import ExchangeRates from '@models/exchange-rates.model';
@@ -8,6 +8,7 @@ import SecurityPricing from '@models/investments/security-pricing.model';
 import UsersCurrencies from '@models/users-currencies.model';
 import { API_LAYER_BASE_CURRENCY_CODE } from '@services/exchange-rates/constants';
 import * as helpers from '@tests/helpers';
+import { ErrorResponse } from '@tests/helpers/common';
 // USD-based rates served by the mocked rates provider for on-demand date
 // lookups. The user's base currency is global.BASE_CURRENCY_CODE (AED), so the
 // base→EUR conversion rate is EUR_PER_USD / AED_PER_USD via the USD pivot.
@@ -363,7 +364,7 @@ describe('Portfolio Summary (GET /investments/portfolios/:id/summary)', () => {
       expect(resetSummary.totalCashInBaseCurrency).toBe('1000.00');
     }, 30000);
 
-    it('rejects disconnecting a display currency of an active portfolio, but allows it once that portfolio is trashed', async () => {
+    it('rejects disconnecting a display currency of a portfolio, whether active or trashed', async () => {
       await helpers.addUserCurrencyByCode({ code: 'EUR', raw: true });
       await helpers.updatePortfolio({ portfolioId: portfolio.id, payload: { displayCurrencyCode: 'EUR' } });
 
@@ -374,8 +375,13 @@ describe('Portfolio Summary (GET /investments/portfolios/:id/summary)', () => {
       await helpers.deletePortfolio({ portfolioId: portfolio.id });
 
       const trashedResponse = await helpers.deleteUserCurrency({ currencyCode: 'EUR' });
-      expect(trashedResponse.statusCode).toBe(200);
-      expect((await helpers.getUserCurrencies()).map((item) => item.currencyCode)).not.toContain('EUR');
+      expect(trashedResponse.statusCode).toBe(ERROR_CODES.ValidationError);
+      const err = trashedResponse.body.response as unknown as ErrorResponse;
+      expect(err.code).toBe(API_ERROR_CODES.currencyInUse);
+      expect(err.details).toEqual({
+        blockers: [expect.objectContaining({ type: 'portfolio', id: portfolio.id, trashed: true })],
+      });
+      expect((await helpers.getUserCurrencies()).map((item) => item.currencyCode)).toContain('EUR');
     });
 
     it('reconnects an orphaned display currency and converts the summary to it', async () => {

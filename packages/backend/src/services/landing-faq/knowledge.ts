@@ -175,6 +175,9 @@ developer, in the open. Source: https://github.com/letehaha/moneymatter
 - Cash flow (income against expenses by month), money flow (income sources to categories), pivot
   tables by category, payee or tag per week, month, quarter or year, net worth and balance history.
 - The dashboard is a grid of widgets you add, remove and rearrange.
+- Pay cycle: set the day your pay cycle starts on (1st to 28th) in Settings > General. The
+  dashboard and the Cash Flow report (its monthly bars and money flow chart) then run from that
+  day, for example the 25th to the 24th. Other reports still use calendar months.
 - Not supported: a free-form custom report builder.
 
 ## Family sharing

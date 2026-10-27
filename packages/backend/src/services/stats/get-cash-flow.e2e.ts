@@ -1521,3 +1521,36 @@ describe('GET /stats/cash-flow – daily granularity', () => {
     expect(overCap.statusCode).toBe(422);
   });
 });
+
+describe('GET /stats/cash-flow — payday setting', () => {
+  it('starts monthly buckets on the payday', async () => {
+    const account = await helpers.createAccount({ raw: true });
+    for (const time of ['2025-01-14T12:00:00.000Z', '2025-01-15T12:00:00.000Z']) {
+      await helpers.createTransaction({
+        payload: {
+          ...helpers.buildTransactionPayload({
+            accountId: account.id,
+            amount: 100,
+            transactionType: TRANSACTION_TYPES.income,
+          }),
+          time,
+        },
+        raw: true,
+      });
+    }
+
+    await helpers.patchUserSettings({ patch: { payday: 15 }, raw: true });
+
+    const result = await helpers.getCashFlow({
+      from: '2024-12-15',
+      to: '2025-02-14',
+      granularity: 'monthly',
+      raw: true,
+    });
+
+    expect(result.periods.map(({ periodStart, periodEnd, income }) => ({ periodStart, periodEnd, income }))).toEqual([
+      { periodStart: '2024-12-15', periodEnd: '2025-01-14', income: 100 },
+      { periodStart: '2025-01-15', periodEnd: '2025-02-14', income: 100 },
+    ]);
+  });
+});

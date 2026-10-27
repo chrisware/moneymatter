@@ -121,6 +121,8 @@ export interface UserSettingsSchema {
   payeeExtractionUsesDescription?: boolean;
   /** Transactions sharing a raw merchant name before a Payee is auto-created. Defaults to 2. */
   payeePromotionThreshold?: 1 | 2 | 3;
+  /** Day of month (1-28) a pay period starts on. Calendar month when unset. */
+  payday?: number;
   ui?: UiSettings;
   subscriptions?: SubscriptionsSettings;
   savedPivotViews?: SavedPivotView[];

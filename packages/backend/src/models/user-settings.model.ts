@@ -321,6 +321,9 @@ const ZodFireSettingsSchema = z.object({
   targetType: z.enum(FIRE_TARGET_TYPES).optional(),
 });
 
+// Day of month a pay period starts on; 1 (calendar month) when unset. Capped at 28 so every month has it.
+const ZodPaydaySchema = z.number().int().min(1).max(28);
+
 export const ZodSettingsSchema = z.object({
   locale: z.enum(SUPPORTED_LOCALES).default(SUPPORTED_LOCALES.ENGLISH),
   ai: ZodAiSettingsSchema.optional(),
@@ -375,6 +378,7 @@ export const ZodSettingsSchema = z.object({
   categoryOrder: z.record(ZodCategoryOrderKeySchema, z.array(z.uuid())).optional(),
   currencyDisplay: z.enum(CURRENCY_DISPLAY_PREFERENCES).optional(),
   fire: ZodFireSettingsSchema.optional(),
+  payday: ZodPaydaySchema.optional(),
 });
 
 export type SettingsSchema = z.infer<typeof ZodSettingsSchema>;
@@ -484,6 +488,7 @@ export const ZodSettingsPatchSchema = z.object({
   categoryOrder: z.record(ZodCategoryOrderKeySchema, z.array(z.uuid()).optional()).optional(),
   currencyDisplay: z.enum(CURRENCY_DISPLAY_PREFERENCES).optional(),
   fire: ZodFireSettingsSchema.optional(),
+  payday: ZodPaydaySchema.optional(),
 });
 
 export type SettingsPatchSchema = z.infer<typeof ZodSettingsPatchSchema>;

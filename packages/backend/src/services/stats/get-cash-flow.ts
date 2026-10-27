@@ -122,7 +122,8 @@ export const getCashFlow = withTransaction(
     excludedCategoryIds,
     excludePlanned,
   }: GetCashFlowParams): Promise<GetCashFlowResponse> => {
-    const buckets = generatePeriodBuckets({ from, to, granularity });
+    const { savingsCategoryIds, payday } = await getUserSettings({ userId });
+    const buckets = generatePeriodBuckets({ from, to, granularity, payday });
 
     if (granularity === 'daily' && buckets.length > MAX_DAILY_BUCKETS) {
       throw new ValidationError({
@@ -209,7 +210,6 @@ export const getCashFlow = withTransaction(
 
     // Categories the user counts as savings drop out of the report the same way an explicitly
     // excluded one does: money moved there is saved rather than spent, so it must not lower netFlow.
-    const { savingsCategoryIds } = await getUserSettings({ userId });
     const hiddenCategoryIds = [...(excludedCategoryIds ?? []), ...(savingsCategoryIds ?? [])];
 
     // Hiding a parent hides everything under it, including subcategories created after the caller

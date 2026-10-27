@@ -570,10 +570,7 @@
     "currencyCodeNotExist": "Currency with passed code does not exist.",
     "currencyNotExist": "Currency with code \"{{currencyCode}}\" does not exist.",
     "cannotDeleteDefaultCurrency": "It is not allowed to delete default currency. Unmake it default first.",
-    "cannotDeleteCurrencyWithAccounts": "It is not allowed to delete currency associated with any accounts. Delete accounts first. Accounts names: \"{{accountNames}}\".",
-    "cannotDeleteCurrencyWithInvestments": "It is not allowed to delete currency \"{{currencyCode}}\" while it is used by investment holdings. Delete those holdings first.",
-    "cannotDeleteCurrencyUsedAsPortfolioDisplay": "Can't remove {{currencyCode}}: it's the display currency of one of your portfolios. Change the portfolio's display currency first.",
-    "defaultCurrencyNotPresent": "Cannot delete currency. Default currency is not present in the system"
+    "currencyInUse": "{{currencyCode}} can't be deleted because it's still in use."
   },
   "ai": {
     "connectionNotFound": "AI model not found.",
