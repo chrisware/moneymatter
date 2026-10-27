@@ -77,6 +77,7 @@ const fullTransaction: TransactionApiResponse = {
   payeeId: null,
   payeeLocked: false,
   categorizationMeta: null,
+  paymentParentId: null,
   createdAt: new Date('2026-01-01T10:00:00.000Z'),
   updatedAt: new Date('2026-01-02T10:00:00.000Z'),
   tags: [{ id: 'tag-1', name: 'food', color: '#fff', icon: 'cup' }],
@@ -180,6 +181,32 @@ describe('MCP serializers', () => {
       expect(slim).not.toHaveProperty('tags');
       expect(slim).not.toHaveProperty('splits');
       expect(slim).not.toHaveProperty('transactionGroups');
+      expect(slim).not.toHaveProperty('paymentParts');
+      expect(slim).not.toHaveProperty('paymentTotal');
+    });
+
+    it('keeps the parts and total of a multi-account payment', () => {
+      const paymentParts = [
+        {
+          transactionId: 'tx-1' as RecordId,
+          accountId: 'acc-1' as RecordId,
+          amount: 10,
+          currencyCode: 'USD',
+          paymentAmount: 10,
+          isLinked: false,
+        },
+        {
+          transactionId: 'tx-2' as RecordId,
+          accountId: 'acc-2' as RecordId,
+          amount: 9,
+          currencyCode: 'EUR',
+          paymentAmount: 10.5,
+          isLinked: true,
+        },
+      ];
+      const slim = slimTransactionsForMcp([{ ...fullTransaction, paymentParts, paymentTotal: 20.5 }])[0]!;
+      expect(slim.paymentParts).toEqual(paymentParts);
+      expect(slim.paymentTotal).toBe(20.5);
     });
   });
 
