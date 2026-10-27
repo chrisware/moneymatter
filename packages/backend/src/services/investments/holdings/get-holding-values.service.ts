@@ -9,7 +9,6 @@ import SecurityPricing from '@models/investments/security-pricing.model';
 import * as UsersCurrencies from '@models/users-currencies.model';
 import { calculateRefAmountFromParams } from '@services/calculate-ref-amount.service';
 import { withDeduplication } from '@services/common/with-deduplication';
-import { addUserCurrencies } from '@services/currencies/add-user-currency';
 import { calculateAllGains } from '@services/investments/gains/gains-calculator.utils';
 import * as userExchangeRateService from '@services/user-exchange-rate';
 import { Op, WhereOptions, fn, col } from 'sequelize';
@@ -168,11 +167,9 @@ const getHoldingValuesImpl = async ({ portfolioId, date, userId }: GetHoldingVal
     baseCurrencyCode = userCurrency?.currency.code;
 
     const portfolio = await Portfolios.findByPk(portfolioId);
-    if (portfolio?.displayCurrencyCode) {
-      // Idempotent; reconnects an orphaned display currency so the rate lookups can resolve it.
-      await addUserCurrencies([{ userId, currencyCode: portfolio.displayCurrencyCode }]);
-      displayCurrencyCode = portfolio.displayCurrencyCode;
-    }
+    // Never write here (e.g. addUserCurrencies): its per-user advisory lock, held by a caller's
+    // transaction that then awaits a deduplicated call blocked on that lock, deadlocks both requests.
+    displayCurrencyCode = portfolio?.displayCurrencyCode ?? undefined;
   }
 
   // A failed base-rate lookup is cached as null so those holdings report refMarketValue 0.
@@ -315,8 +312,7 @@ const getHoldingValuesImpl = async ({ portfolioId, date, userId }: GetHoldingVal
 // Do not call `withTransaction` here because it's fundamentally not compatible
 // with `withDeduplication`. Also on 99.99% `withTransaction` will already be
 // defined on the level above, since this service is not really callable alone
-// Its only write is the idempotent display-currency reconnect, so a run without
-// `withTransaction` that fails midway leaves nothing that needs undoing.
+// It is read-only, so a run without `withTransaction` leaves nothing to undo.
 
 export const getHoldingValues = withDeduplication(getHoldingValuesImpl, {
   keyGenerator: ({ portfolioId, date, userId }) =>

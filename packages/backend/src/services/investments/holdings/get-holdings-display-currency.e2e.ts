@@ -117,7 +117,7 @@ describe('Holdings display currency (GET /investments/portfolios/:id/holdings)',
     expect(parseFloat(converted.displayRealizedGainValue!)).toBeCloseTo(0, 2);
   }, 30000);
 
-  it('reconnects an orphaned display currency and returns display fields in it', async () => {
+  it('returns display fields in an orphaned display currency', async () => {
     await helpers.addUserCurrencyByCode({ code: 'EUR', raw: true });
     await helpers.updatePortfolio({
       portfolioId: portfolio.id,
@@ -141,9 +141,6 @@ describe('Holdings display currency (GET /investments/portfolios/:id/holdings)',
     expect(parseFloat(holding.marketValue!)).toBeCloseTo(1100, 1);
     expect(holding.displayCurrencyCode).toBe('EUR');
     expect(parseFloat(holding.displayMarketValue!)).toBeCloseTo(1100 * AED_TO_EUR, 1);
-
-    const userCurrencies = await helpers.getUserCurrencies();
-    expect(userCurrencies.map((item) => item.currencyCode)).toContain('EUR');
   });
 
   it('omits display fields when no rate exists for the display currency', async () => {
