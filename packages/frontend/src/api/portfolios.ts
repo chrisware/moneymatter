@@ -260,7 +260,9 @@ export const getPortfolioSummaries = async (): Promise<PortfolioSummaryModel[]> 
   return result;
 };
 
-export const getPortfoliosAnnualizedReturns = async (): Promise<PortfolioAnnualizedReturnModel[]> => {
-  const result = await api.get('/investments/portfolios/annualized-returns');
+export const getPortfoliosAnnualizedReturns = async ({ asOf }: { asOf?: string } = {}): Promise<
+  PortfolioAnnualizedReturnModel[]
+> => {
+  const result = await api.get('/investments/portfolios/annualized-returns', asOf ? { asOf } : undefined);
   return result;
 };

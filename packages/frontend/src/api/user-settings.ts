@@ -4,6 +4,7 @@ import type {
   CategoryMappingPreset,
   CategoryOrder,
   FireSettings,
+  FireSettingsSnapshot,
   PAYMENT_TYPES,
   TransactionOptionalField,
   SidebarSectionsConfig,
@@ -161,6 +162,8 @@ export interface UserSettingsSchema {
   categoryOrder?: CategoryOrder;
   currencyDisplay?: CurrencyDisplayPreference;
   fire?: FireSettings;
+  /** Server-written monthly FIRE settings snapshots, read by the pace comparison. */
+  fireHistory?: FireSettingsSnapshot[];
 }
 
 export const getUserSettings = async (): Promise<UserSettingsSchema> => {

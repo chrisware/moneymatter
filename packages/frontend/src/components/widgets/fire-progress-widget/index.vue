@@ -6,6 +6,8 @@ import { useUserSettings } from '@/composable/data-queries/user-settings';
 import { type FireMilestone, type FireWarning, UNREACHABLE_PMT_MONTHS } from '@/composable/fire/build-fire-plan';
 import { displayProgressPct } from '@/composable/fire/fire-display';
 import { monthsToLabel } from '@/composable/fire/fire-math';
+import { PACE_TONE_CLASS, paceChip } from '@/composable/fire/fire-pace-display';
+import { useFirePace } from '@/composable/fire/use-fire-pace';
 import { useFirePlan, useResolvedFireSettings } from '@/composable/fire/use-fire-plan';
 import { useFormatCurrency } from '@/composable/formatters';
 import { useDateLocale } from '@/composable/use-date-locale';
@@ -61,6 +63,18 @@ const {
   settings,
   includeHistory: showPath,
   enabled: () => !isGated.value,
+});
+
+const { pace, isLoading: isPaceLoading } = useFirePace({
+  plan,
+  fire: () => userSettings.value?.fire,
+  history: () => userSettings.value?.fireHistory,
+  enabled: () => !isGated.value,
+});
+const paceLine = computed(() => {
+  const chip = pace.value ? paceChip({ pace: pace.value, t }) : null;
+  if (!pace.value || !chip) return null;
+  return { ...chip, month: format(pace.value.anchor.date, 'LLL yyyy') };
 });
 
 const fireRoute = { name: ROUTES_NAMES.analyticsFire };
@@ -175,6 +189,7 @@ const pmtDuration = computed(() => formatDuration({ months: UNREACHABLE_PMT_MONT
 
 const [DefineHero, ReuseHero] = createReusableTemplate<{ numberClass: string; unitClass: string; withPct?: boolean }>();
 const [DefineHeroPct, ReuseHeroPct] = createReusableTemplate();
+const [DefinePace, ReusePace] = createReusableTemplate();
 const [DefineLedger, ReuseLedger] = createReusableTemplate();
 const [DefineTimeline, ReuseTimeline] = createReusableTemplate();
 const [DefineStepper, ReuseStepper] = createReusableTemplate();
@@ -210,6 +225,31 @@ const [DefineSkeletonDots, ReuseSkeletonDots] = createReusableTemplate();
       </p>
     </DefineHeroPct>
 
+    <DefinePace>
+      <span
+        v-if="isPaceLoading"
+        class="bg-muted col-span-full inline-block h-5 w-40 animate-pulse rounded-full"
+        role="status"
+        :aria-label="$t('common.loading')"
+      />
+      <p v-else-if="paceLine" class="col-span-full flex flex-wrap items-center gap-1.5 tabular-nums">
+        <span
+          :class="
+            cn(
+              'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-bold',
+              PACE_TONE_CLASS[paceLine.tone],
+            )
+          "
+        >
+          <component :is="paceLine.icon" class="size-3.5" />
+          {{ paceLine.label }}
+        </span>
+        <span class="text-muted-foreground text-xs">{{
+          $t('widgets.fireProgress.paceVs', { month: paceLine.month })
+        }}</span>
+      </p>
+    </DefinePace>
+
     <DefineHero v-slot="{ numberClass, unitClass, withPct }">
       <div v-if="plan.status === 'reached' && plan.reached" class="flex flex-col gap-1">
         <p class="text-success-text flex items-center gap-1.5 text-lg font-extrabold">
@@ -243,6 +283,7 @@ const [DefineSkeletonDots, ReuseSkeletonDots] = createReusableTemplate();
           </template>
           <template #duration>{{ pmtDuration }}</template>
         </i18n-t>
+        <ReusePace />
         <ReuseHeroPct v-if="withPct" />
       </div>
 
@@ -293,6 +334,7 @@ const [DefineSkeletonDots, ReuseSkeletonDots] = createReusableTemplate();
             </span>
           </DesktopOnlyTooltip>
         </p>
+        <ReusePace />
         <ReuseHeroPct v-if="withPct" />
       </div>
     </DefineHero>

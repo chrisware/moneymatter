@@ -9,9 +9,15 @@ import { type MaybeRefOrGetter, computed, toValue } from 'vue';
 import { getFireSeedWindow } from './derive-fire-seed';
 
 /** Monthly cash flow of owned accounts over the seed window; the FIRE planner and goal feasibility share its cache. */
-export const useFireSeedCashFlow = ({ now, enabled = true }: { now: Date; enabled?: MaybeRefOrGetter<boolean> }) => {
-  const seedWindow = getFireSeedWindow({ now });
-  const seedKey = format(seedWindow.from, 'yyyy-MM-dd');
+export const useFireSeedCashFlow = ({
+  now,
+  enabled = true,
+}: {
+  now: MaybeRefOrGetter<Date>;
+  enabled?: MaybeRefOrGetter<boolean>;
+}) => {
+  const seedWindow = computed(() => getFireSeedWindow({ now: toValue(now) }));
+  const seedKey = computed(() => format(seedWindow.value.from, 'yyyy-MM-dd'));
 
   const { accounts } = storeToRefs(useAccountsStore());
   const ownedAccountIds = computed(() =>
@@ -19,10 +25,10 @@ export const useFireSeedCashFlow = ({ now, enabled = true }: { now: Date; enable
   );
 
   const isEnabled = computed(() => toValue(enabled) && ownedAccountIds.value.length > 0);
-  const queryKey = computed(() => [...VUE_QUERY_CACHE_KEYS.fireCashFlow, seedKey, ownedAccountIds.value]);
+  const queryKey = computed(() => [...VUE_QUERY_CACHE_KEYS.fireCashFlow, seedKey.value, ownedAccountIds.value]);
   // An empty accountIds list widens to every accessible account on the server.
   const params = () => ({
-    ...seedWindow,
+    ...seedWindow.value,
     granularity: 'monthly' as const,
     excludePlanned: true,
     accountIds: ownedAccountIds.value,

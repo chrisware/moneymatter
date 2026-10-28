@@ -9,10 +9,13 @@ import {
   type CategoryMappingPreset,
   type Equals,
   type Expect,
+  FIRE_HISTORY_BASELINE_MONTH,
+  FIRE_HISTORY_MAX_ENTRIES,
   FIRE_LIMITS,
   FIRE_MAX_EXCLUDED_CATEGORIES,
   FIRE_TARGET_TYPES,
   type FireSettings,
+  type FireSettingsSnapshot,
   MAX_AI_CONNECTIONS,
   MAX_CATEGORY_MAPPING_PRESETS,
   MAX_SAVED_TRANSACTION_VIEWS,
@@ -301,6 +304,8 @@ const ZodCategoryOrderKeySchema = z
 const fireRange = ({ key }: { key: keyof typeof FIRE_LIMITS }) =>
   z.number().min(FIRE_LIMITS[key].min).max(FIRE_LIMITS[key].max);
 
+const FIRE_MONTH_REGEX = /^\d{4}-(0[1-9]|1[0-2])$/;
+
 // No `.default()` anywhere: the PATCH deep merge would write defaults over stored values.
 const ZodFireSettingsSchema = z.object({
   annualSpendingOverride: z.number().min(0).nullable().optional(),
@@ -319,6 +324,12 @@ const ZodFireSettingsSchema = z.object({
   birthYear: fireRange({ key: 'birthYear' }).int().nullable().optional(),
   coastTargetAge: fireRange({ key: 'coastTargetAge' }).int().optional(),
   targetType: z.enum(FIRE_TARGET_TYPES).optional(),
+  paceAnchor: z.string().regex(FIRE_MONTH_REGEX).nullable().optional(),
+});
+
+const ZodFireSettingsSnapshotSchema = z.object({
+  month: z.string().refine((month) => month === FIRE_HISTORY_BASELINE_MONTH || FIRE_MONTH_REGEX.test(month)),
+  fire: ZodFireSettingsSchema,
 });
 
 // Day of month a pay period starts on; 1 (calendar month) when unset. Capped at 28 so every month has it.
@@ -378,6 +389,8 @@ export const ZodSettingsSchema = z.object({
   categoryOrder: z.record(ZodCategoryOrderKeySchema, z.array(z.uuid())).optional(),
   currencyDisplay: z.enum(CURRENCY_DISPLAY_PREFERENCES).optional(),
   fire: ZodFireSettingsSchema.optional(),
+  // Server-owned, oldest first: written by the PATCH that changes `fire`.
+  fireHistory: z.array(ZodFireSettingsSnapshotSchema).max(FIRE_HISTORY_MAX_ENTRIES).optional(),
   payday: ZodPaydaySchema.optional(),
 });
 
@@ -502,7 +515,7 @@ type DeepPartial<T> = {
       : T[K];
 };
 
-type PatchableSettings = Omit<SettingsSchema, 'onboarding' | 'ai'> & {
+type PatchableSettings = Omit<SettingsSchema, 'onboarding' | 'ai' | 'fireHistory'> & {
   ai?: Omit<NonNullable<SettingsSchema['ai']>, 'connections' | 'featureConfigs'>;
 };
 
@@ -516,6 +529,11 @@ export type SettingsPatchSchemaIsInSync = Expect<Equals<SettingsPatchSchema, Dee
 
 /** @public exported only so the assertion isn't flagged as unused. */
 export type FireSettingsSchemaIsInSync = Expect<Equals<z.infer<typeof ZodFireSettingsSchema>, FireSettings>>;
+
+/** @public exported only so the assertion isn't flagged as unused. */
+export type FireSettingsSnapshotSchemaIsInSync = Expect<
+  Equals<z.infer<typeof ZodFireSettingsSnapshotSchema>, FireSettingsSnapshot>
+>;
 
 /**
  * Compile-time drift guard: the persisted saved-pivot-view schema must infer exactly the shared

@@ -500,7 +500,8 @@
         "title": "Plan your path to FIRE",
         "description": "Plus feature",
         "action": "Unlock"
-      }
+      },
+      "paceVs": "vs {month}"
     }
   }
 }
