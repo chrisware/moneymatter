@@ -71,11 +71,11 @@ export const paceChip = ({ pace, t }: { pace: FirePace; t: ComposerTranslation }
   if (pace.verdict === 'no-history') return null;
   const duration = formatDuration({ months: Math.abs(pace.shiftMonths ?? 0), t });
   const labels: Record<ShownVerdict, string> = {
-    ahead: t('analytics.fire.pace.ahead', { duration }),
-    behind: t('analytics.fire.pace.behind', { duration }),
-    'on-pace': t('analytics.fire.pace.onPace'),
-    'back-in-reach': t('analytics.fire.pace.backInReach'),
-    'off-track': t('analytics.fire.pace.offTrack'),
+    ahead: t('common.fire.pace.ahead', { duration }),
+    behind: t('common.fire.pace.behind', { duration }),
+    'on-pace': t('common.fire.pace.onPace'),
+    'back-in-reach': t('common.fire.pace.backInReach'),
+    'off-track': t('common.fire.pace.offTrack'),
   };
   return { tone: TONES[pace.verdict], icon: ICONS[pace.verdict], label: labels[pace.verdict] };
 };

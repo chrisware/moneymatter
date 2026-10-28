@@ -339,11 +339,6 @@
       },
       "pace": {
         "row": "{status} vs {anchor}",
-        "ahead": "{duration} ahead",
-        "behind": "{duration} behind",
-        "onPace": "On pace",
-        "backInReach": "Back within reach",
-        "offTrack": "Off track",
         "noHistory": "Not enough history before {month}",
         "loadFailed": "Couldn't load the comparison",
         "compareWith": "Compare with {month}",

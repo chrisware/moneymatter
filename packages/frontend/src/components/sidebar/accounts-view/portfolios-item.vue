@@ -59,7 +59,7 @@ const portfolioIcon = computed(() => {
           v-else-if="totalValue !== null"
           :content="formatAmountByCurrencyCode(totalValue, currencyCode)"
         >
-          <span class="text-amount text-muted-foreground shrink-0 text-sm">
+          <span class="text-amount shrink-0 text-sm font-medium">
             {{ formatCompactAmount(totalValue, currencyCode) }}
           </span>
         </DesktopOnlyTooltip>

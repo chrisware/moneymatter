@@ -291,6 +291,13 @@
         "lean": "Lean FIRE",
         "regular": "FIRE",
         "fat": "Fat FIRE"
+      },
+      "pace": {
+        "ahead": "Випереджаєте на {duration}",
+        "behind": "Відстаєте на {duration}",
+        "onPace": "За графіком",
+        "backInReach": "Знову досяжно",
+        "offTrack": "Поза графіком"
       }
     }
   },

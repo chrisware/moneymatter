@@ -13,11 +13,7 @@
 
     <DateSelector v-model="period" :presets="quickPresets" :earliest-date="earliestDate">
       <template #trigger="{ triggerText }">
-        <Button
-          variant="ghost"
-          size="sm"
-          :class="cn('hover:bg-accent min-w-55 font-medium', variant === 'solid' && 'h-8')"
-        >
+        <Button variant="ghost" size="sm" :class="cn('min-w-55 font-medium', variant === 'solid' && 'h-8')">
           <CalendarIcon class="mr-1.5 size-3.5" />
           {{ triggerText }}
         </Button>

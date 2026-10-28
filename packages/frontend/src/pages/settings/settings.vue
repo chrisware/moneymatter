@@ -17,7 +17,7 @@
     <nav
       v-if="!isOnChildRoute || !isCompactLayout"
       :class="[
-        'border-border bg-card/50 shrink-0 rounded-lg border backdrop-blur-sm',
+        'border-border bg-card dark:bg-card/50 shadow-card shrink-0 rounded-lg border backdrop-blur-sm dark:shadow-none',
         isTransitionReady && 'transition-all duration-200',
         isCompactLayout ? 'w-full' : isCollapsed ? 'w-14' : 'w-full lg:w-52',
         !isCompactLayout && 'sticky top-[calc(var(--header-height)+1rem)] self-start',
@@ -59,9 +59,9 @@
                     :to="tab.to"
                     :class="
                       cn(
-                        'text-muted-foreground flex items-center gap-2 rounded-md px-3 py-2 whitespace-nowrap transition-colors',
+                        'text-foreground dark:text-muted-foreground flex items-center gap-2 rounded-md px-3 py-2 whitespace-nowrap transition-colors',
                         'hover:bg-accent hover:text-foreground',
-                        '[&.router-link-active]:bg-accent [&.router-link-active]:text-foreground',
+                        '[&.router-link-active]:bg-primary/10 dark:[&.router-link-active]:bg-accent [&.router-link-active]:text-foreground',
                         isCompactLayout ? 'text-sm md:gap-4 md:text-base' : 'text-sm',
                       )
                     "
@@ -90,7 +90,7 @@
                 rel="noopener noreferrer"
                 :class="
                   cn(
-                    'text-muted-foreground flex items-center gap-2 rounded-md px-3 py-2 whitespace-nowrap transition-colors',
+                    'text-foreground dark:text-muted-foreground flex items-center gap-2 rounded-md px-3 py-2 whitespace-nowrap transition-colors',
                     'hover:bg-accent hover:text-foreground',
                     isCompactLayout ? 'text-sm md:gap-4 md:text-base' : 'text-sm',
                   )

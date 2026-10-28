@@ -339,11 +339,6 @@
       },
       "pace": {
         "row": "{status} · порівняно з {anchor}",
-        "ahead": "Випереджаєте на {duration}",
-        "behind": "Відстаєте на {duration}",
-        "onPace": "За графіком",
-        "backInReach": "Знову досяжно",
-        "offTrack": "Поза графіком",
         "noHistory": "Замало історії до періоду: {month}",
         "loadFailed": "Не вдалося завантажити порівняння",
         "compareWith": "Порівняти з: {month}",
