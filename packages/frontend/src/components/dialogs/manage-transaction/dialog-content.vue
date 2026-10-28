@@ -115,6 +115,7 @@ import { useReverseGeocodedLabel } from './composables/use-reverse-geocoded-labe
 import { formToCreateMorePrefill } from './utils/form-to-create-more-prefill';
 import { formToDuplicatePrefill } from './utils/form-to-duplicate-prefill';
 import { canDuplicateTransaction } from './utils/can-duplicate-transaction';
+import { resolveAccountPaymentType } from './utils/resolve-account-payment-type';
 import { resolveFormLocation } from './utils/resolve-form-location';
 import { useTransactionTemplating } from './composables/use-transaction-templating';
 import { useAutoTagApply } from '@/composable/use-auto-tag-apply';
@@ -242,6 +243,14 @@ const form = ref<UI_FORM_STRUCT>({
   originalAmount: null,
   originalCurrency: null,
 });
+
+watch(
+  () => form.value.account,
+  (account) => {
+    if (!isFormCreation.value || form.value.paymentTypeUserTouched) return;
+    form.value.paymentType = resolveAccountPaymentType({ account, fallback: defaultPaymentType.value });
+  },
+);
 
 // PayeeField → category auto-fill (one-shot) + tag auto-apply.
 // The form is unaware whether the category was set by the user or by Payee
@@ -1293,8 +1302,11 @@ const prepopulateIfReady = () => {
     const pageAccount =
       route.name === ROUTES_NAMES.account ? accounts.find((account) => account.id === route.params.id) : undefined;
     form.value.account = pageAccount ?? resolveDefaultAccount({ accounts });
-    form.value.paymentType = defaultPaymentType.value;
     Object.assign(form.value, initialPrefill);
+    form.value.paymentType =
+      initialPrefill?.paymentType ??
+      resolveAccountPaymentType({ account: form.value.account, fallback: defaultPaymentType.value });
+    form.value.paymentTypeUserTouched = !!initialPrefill?.paymentType;
     // Keeps the payee auto-fill from replacing a prefilled category.
     form.value.categoryUserTouched = !!initialPrefill?.category;
     // A prefilled category arrives with the tag list its source already settled on.
@@ -1485,6 +1497,7 @@ onUnmounted(() => {
       <SelectField
         v-model="form.paymentType"
         :label="$t('dialogs.manageTransaction.form.paymentTypeLabel')"
+        @update:model-value="form.paymentTypeUserTouched = true"
         :disabled="isFormFieldsDisabled || !isEditableAsManual"
         :values="VERBOSE_PAYMENT_TYPES"
         :label-key="(item) => t(item.label)"

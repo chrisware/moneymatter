@@ -31,7 +31,8 @@ const inputSchema = {
       PAYMENT_TYPES.voucher,
       PAYMENT_TYPES.webPayment,
     ])
-    .describe('Payment method used'),
+    .optional()
+    .describe("Payment method used. Defaults to the account's default payment type, or bankTransfer"),
   transferNature: z
     .enum([
       TRANSACTION_TRANSFER_NATURE.not_transfer,
@@ -89,7 +90,7 @@ export function registerCreateTransaction(server: McpServer) {
     'create_transaction',
     {
       description:
-        'Create a new transaction (income, expense, or transfer). Requires accountId, amount (decimal), transactionType, paymentType, and transferNature. For transfers, also provide destinationAccountId and destinationAmount. Use splits to categorize portions of the amount. Use originalAmount + originalCurrencyCode to record what the purchase cost in its invoice currency when that differs from the account currency. Use paymentLegs to pay one purchase from several accounts.',
+        'Create a new transaction (income, expense, or transfer). Requires accountId, amount (decimal), transactionType, and transferNature. paymentType is optional and defaults to the default payment type of the account. For transfers, also provide destinationAccountId and destinationAmount. Use splits to categorize portions of the amount. Use originalAmount + originalCurrencyCode to record what the purchase cost in its invoice currency when that differs from the account currency. Use paymentLegs to pay one purchase from several accounts.',
       inputSchema,
     },
     async (args, extra) => {

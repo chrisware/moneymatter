@@ -8,8 +8,10 @@ import { SplitInput } from './splits/types';
 
 export type CreateTransactionParams = Omit<
   Transactions.CreateTransactionPayload,
-  'refAmount' | 'transferId' | 'currencyCode' | 'refCurrencyCode' | 'accountType'
+  'refAmount' | 'transferId' | 'currencyCode' | 'refCurrencyCode' | 'accountType' | 'paymentType'
 > & {
+  /** Falls back to the account's `defaultPaymentType`, then `bankTransfer`. */
+  paymentType?: PAYMENT_TYPES;
   /**
    * Provider and importer code declares the type it syncs into. Leaving it out marks the row
    * as user-typed: the create path then reads the real type off the account, and rejects a

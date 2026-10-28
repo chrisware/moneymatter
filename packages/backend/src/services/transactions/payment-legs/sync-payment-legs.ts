@@ -86,7 +86,6 @@ const legRefAmount = ({
 const createdLegFields = ({ main, amount }: { main: Transactions.default; amount: Money }) => ({
   amount,
   transactionType: main.transactionType,
-  paymentType: main.paymentType,
   categoryId: main.categoryId,
   note: main.note,
   time: main.time,
@@ -114,7 +113,7 @@ const createLeg = async ({
 }) => {
   const account = await Accounts.findOne({
     where: { id: accountId, userId },
-    attributes: ['id', 'type', 'currencyCode'],
+    attributes: ['id', 'type', 'currencyCode', 'defaultPaymentType'],
   });
   if (!account || account.type !== ACCOUNT_TYPES.system || account.id === main.accountId) {
     throw invalid({ key: 'transactions.paymentLegInvalidAccount' });
@@ -122,6 +121,7 @@ const createLeg = async ({
 
   const leg = await Transactions.createTransaction({
     ...createdLegFields({ main, amount }),
+    paymentType: account.defaultPaymentType ?? main.paymentType,
     refAmount: await legRefAmount({ ownerId: userId, main, amount, currencyCode: account.currencyCode }),
     userId,
     accountId,

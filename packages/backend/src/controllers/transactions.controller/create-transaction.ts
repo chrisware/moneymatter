@@ -23,7 +23,7 @@ const schema = z.object({
       ...transactionDetailFieldsSchema,
       time: transactionTimeSchema().optional(),
       transactionType: z.nativeEnum(TRANSACTION_TYPES),
-      paymentType: z.nativeEnum(PAYMENT_TYPES),
+      paymentType: z.nativeEnum(PAYMENT_TYPES).optional(),
       accountId: recordId(),
       destinationAmount: positiveAmountSchema().optional(),
       destinationAccountId: recordId().optional(),

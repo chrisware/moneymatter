@@ -136,6 +136,7 @@
       "accountCategoryPlaceholder": "Виберіть категорію рахунку",
       "creditLimitLabel": "Кредитний ліміт",
       "creditLimitPlaceholder": "Кредитний ліміт",
+      "defaultPaymentTypeLabel": "Тип платежу за замовчуванням",
       "submitButton": "Створити",
       "submitButtonLoading": "Створення...",
       "notifications": {

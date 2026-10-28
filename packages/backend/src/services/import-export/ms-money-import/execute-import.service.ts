@@ -6,7 +6,6 @@ import {
   MS_MONEY_VOID_TAG,
   type MsMoneyAccountMapping,
   type MsMoneyImportSummary,
-  PAYMENT_TYPES,
   TRANSACTION_TRANSFER_NATURE,
   TRANSACTION_TYPES,
   type TransactionImportDetails,
@@ -361,9 +360,6 @@ async function executeMsMoneyImportImpl({
         note,
         time: new Date(tx.date),
         transactionType,
-        // Money has no payment-type column, so every row lands on the neutral
-        // default rather than a guess from the memo.
-        paymentType: PAYMENT_TYPES.bankTransfer,
         accountType: ACCOUNT_TYPES.system,
         transferNature,
         categoryId,
@@ -459,7 +455,6 @@ async function executeMsMoneyImportImpl({
         note: xfer.note,
         time: new Date(xfer.date),
         transactionType: TRANSACTION_TYPES.expense,
-        paymentType: PAYMENT_TYPES.bankTransfer,
         accountType: ACCOUNT_TYPES.system,
         transferNature: TRANSACTION_TRANSFER_NATURE.common_transfer,
         destinationAccountId,

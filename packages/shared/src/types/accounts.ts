@@ -1,6 +1,7 @@
 import type { EntityLogoFields, EntityLogoPayload } from './entity-logo';
 import type { RecordId } from './record-id';
 import type { ResourceShareInfo } from './sharing';
+import type { PAYMENT_TYPES } from './transactions';
 
 export enum ACCOUNT_TYPES {
   system = 'system',
@@ -127,6 +128,7 @@ export interface AccountModel extends EntityLogoFields {
   creditLimit: number;
   refCreditLimit: number;
   accountCategory: ACCOUNT_CATEGORIES;
+  defaultPaymentType: PAYMENT_TYPES | null;
   currencyCode: string;
   userId: number;
   externalId?: RecordId;
@@ -161,6 +163,7 @@ export interface AccountApiResponse extends EntityLogoFields {
   refCreditLimit: number;
   type: string;
   accountCategory: string;
+  defaultPaymentType: PAYMENT_TYPES | null;
   currencyCode: string;
   userId: number;
   externalId: string | null;
@@ -219,6 +222,7 @@ type NullableBodyPayload = {
 
 export interface CreateAccountBody extends NullableBodyPayload, EntityLogoPayload {
   accountCategory: AccountModel['accountCategory'];
+  defaultPaymentType?: AccountModel['defaultPaymentType'];
   currencyCode: AccountModel['currencyCode'];
   name: AccountModel['name'];
   initialBalance: AccountModel['initialBalance'];
@@ -228,6 +232,7 @@ export interface CreateAccountBody extends NullableBodyPayload, EntityLogoPayloa
 
 export interface UpdateAccountBody extends NullableBodyPayload, EntityLogoPayload {
   accountCategory?: AccountModel['accountCategory'];
+  defaultPaymentType?: AccountModel['defaultPaymentType'];
   name?: AccountModel['name'];
   currentBalance?: AccountModel['currentBalance'];
   initialBalance?: AccountModel['initialBalance'];

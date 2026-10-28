@@ -103,7 +103,8 @@
       "debitCard": "Debit card",
       "mobilePayment": "Mobile payment",
       "voucher": "Voucher",
-      "webPayment": "Web payment"
+      "webPayment": "Web payment",
+      "none": "None"
     },
     "vehicleClasses": {
       "sedan": "Sedan",

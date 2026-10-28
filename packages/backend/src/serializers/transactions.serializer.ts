@@ -130,7 +130,7 @@ interface CreateTransactionRequest {
   location?: TransactionLocation | null;
   time?: string;
   transactionType: TRANSACTION_TYPES;
-  paymentType: PAYMENT_TYPES;
+  paymentType?: PAYMENT_TYPES;
   accountId: RecordId;
   destinationAccountId?: string;
   destinationTransactionId?: string;
@@ -168,7 +168,7 @@ interface CreateTransactionInternal {
   location?: TransactionLocation | null;
   time?: Date;
   transactionType: TRANSACTION_TYPES;
-  paymentType: PAYMENT_TYPES;
+  paymentType?: PAYMENT_TYPES;
   accountId: RecordId;
   destinationAccountId?: string;
   destinationTransactionId?: string;

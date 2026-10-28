@@ -264,7 +264,7 @@ export interface CreateTransactionBody {
   location?: TransactionLocation | null;
   time: string;
   transactionType: TransactionModel['transactionType'];
-  paymentType: TransactionModel['paymentType'];
+  paymentType?: TransactionModel['paymentType'];
   accountId: TransactionModel['accountId'];
   categoryId?: TransactionModel['categoryId'];
   destinationAccountId?: TransactionModel['accountId'];

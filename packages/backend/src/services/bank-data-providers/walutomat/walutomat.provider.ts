@@ -1,12 +1,6 @@
 import type { RecordId } from '@bt/shared/types';
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import {
-  ACCOUNT_TYPES,
-  BANK_PROVIDER_TYPE,
-  PAYMENT_TYPES,
-  TRANSACTION_TRANSFER_NATURE,
-  TRANSACTION_TYPES,
-} from '@bt/shared/types';
+import { ACCOUNT_TYPES, BANK_PROVIDER_TYPE, TRANSACTION_TRANSFER_NATURE, TRANSACTION_TYPES } from '@bt/shared/types';
 import { Money } from '@common/types/money';
 import { t } from '@i18n/index';
 import { BadRequestError, ForbiddenError, ValidationError } from '@js/errors';
@@ -412,7 +406,6 @@ export class WalutomatProvider extends BaseBankDataProvider {
             accountId: account.id,
             userId: connection.userId,
             transactionType: isExpense ? TRANSACTION_TYPES.expense : TRANSACTION_TYPES.income,
-            paymentType: PAYMENT_TYPES.bankTransfer,
             categoryId: defaultCategoryId,
             transferNature: TRANSACTION_TRANSFER_NATURE.not_transfer,
             accountType: ACCOUNT_TYPES.walutomat,

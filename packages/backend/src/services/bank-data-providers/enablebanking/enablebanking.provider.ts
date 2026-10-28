@@ -70,7 +70,7 @@ import {
 } from './utils/constants';
 import { type ClosingBalanceRow, findClosingRowId } from './utils/daily-closing-balance';
 import { generateState, validatePrivateKey, validateState } from './utils/jwt-utils';
-import { type EditMergeSkipReason, hasManualStamp, planEditMerge } from './utils/plan-edit-merge';
+import { type EditMergeSkipReason, hasManualStamp, isSyncPaymentType, planEditMerge } from './utils/plan-edit-merge';
 import { generateTransactionHash, getTransactionDateString } from './utils/transaction-hash';
 import {
   cleanMerchantName,
@@ -1111,7 +1111,6 @@ export class EnableBankingProvider extends BaseBankDataProvider {
               accountId: account.id,
               userId: connection.userId,
               transactionType: isExpense ? TRANSACTION_TYPES.expense : TRANSACTION_TYPES.income,
-              paymentType: PAYMENT_TYPES.bankTransfer,
               categoryId: defaultCategoryId,
               transferNature: TRANSACTION_TRANSFER_NATURE.not_transfer,
               accountType: ACCOUNT_TYPES.enableBanking,
@@ -2051,6 +2050,7 @@ export class EnableBankingProvider extends BaseBankDataProvider {
           orphanSyncNote: syncGeneratedNote({ tx: pending }),
           canonicalSyncNote: syncGeneratedNote({ tx: booked }),
           defaultCategoryId,
+          defaultPaymentType: account.defaultPaymentType,
           now,
         });
         if (plan.action === 'skip') {
@@ -2124,7 +2124,11 @@ export class EnableBankingProvider extends BaseBankDataProvider {
           continue;
         }
 
-        const blocker = await this.findOrphanDeletionBlocker({ orphan, canonical });
+        const blocker = await this.findOrphanDeletionBlocker({
+          orphan,
+          canonical,
+          defaultPaymentType: account.defaultPaymentType,
+        });
         if (blocker) {
           logSkip({ orphanId: orphan.id, reason: blocker });
           skippedCount++;
@@ -2157,9 +2161,11 @@ export class EnableBankingProvider extends BaseBankDataProvider {
   private async findOrphanDeletionBlocker({
     orphan,
     canonical,
+    defaultPaymentType,
   }: {
     orphan: Transactions;
     canonical: Transactions;
+    defaultPaymentType: PAYMENT_TYPES | null;
   }): Promise<ReconcileSkipReason | null> {
     const orphanNote = orphan.note ?? '';
     const canonicalNote = canonical.note ?? '';
@@ -2173,7 +2179,12 @@ export class EnableBankingProvider extends BaseBankDataProvider {
     ) {
       return 'categorization_conflict';
     }
-    if (orphan.paymentType !== canonical.paymentType) return 'payment_type_conflict';
+    if (
+      orphan.paymentType !== canonical.paymentType &&
+      !isSyncPaymentType({ paymentType: orphan.paymentType, defaultPaymentType })
+    ) {
+      return 'payment_type_conflict';
+    }
     // payeeLocked marks a Payee the user assigned or cleared by hand.
     if (orphan.payeeLocked && orphan.payeeId !== canonical.payeeId) return 'payee_conflict';
 

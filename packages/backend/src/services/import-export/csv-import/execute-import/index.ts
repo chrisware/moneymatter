@@ -7,13 +7,7 @@ import type {
   TagMappingConfig,
   TransactionImportDetails,
 } from '@bt/shared/types';
-import {
-  ACCOUNT_TYPES,
-  ImportSource,
-  PAYMENT_TYPES,
-  TRANSACTION_TRANSFER_NATURE,
-  TRANSACTION_TYPES,
-} from '@bt/shared/types';
+import { ACCOUNT_TYPES, ImportSource, TRANSACTION_TRANSFER_NATURE, TRANSACTION_TYPES } from '@bt/shared/types';
 import { Money } from '@common/types/money';
 import { t } from '@i18n/index';
 import { logger } from '@js/utils/logger';
@@ -340,7 +334,6 @@ async function executeImportImpl({
         note: row.description,
         time: new Date(row.date),
         transactionType: row.transactionType === 'income' ? TRANSACTION_TYPES.income : TRANSACTION_TYPES.expense,
-        paymentType: PAYMENT_TYPES.creditCard,
         accountId,
         categoryId: categoryId || undefined,
         accountType: ACCOUNT_TYPES.system,

@@ -1,4 +1,5 @@
 import {
+  PAYMENT_TYPES,
   type PaymentLegInput,
   type RecordId,
   RESOURCE_TYPES,
@@ -877,5 +878,36 @@ describe('Multi-account payments: guards and cleanup', () => {
 
     const response = await helpers.createSingleRefund({ originalTxId: main.id, refundTxId: refund!.id });
     expect((response as { statusCode: number }).statusCode).toBe(ERROR_CODES.ValidationError);
+  });
+
+  it("gives a created leg its account's default payment type and keeps it across main edits", async () => {
+    const [card, plain] = await createManualAccounts({ count: 2 });
+    const voucher = await helpers.createAccount({
+      payload: helpers.buildAccountPayload({ initialBalance: 1000, defaultPaymentType: PAYMENT_TYPES.voucher }),
+      raw: true,
+    });
+    const main = await createPayment({
+      mainAccountId: card!.id,
+      legs: [
+        { accountId: voucher.id, amount: 20 },
+        { accountId: plain!.id, amount: 10 },
+      ],
+    });
+
+    expect(main.paymentType).toBe(PAYMENT_TYPES.creditCard);
+    expect((await legsOf({ accountId: voucher.id }))[0]!.paymentType).toBe(PAYMENT_TYPES.voucher);
+    expect((await legsOf({ accountId: plain!.id }))[0]!.paymentType).toBe(PAYMENT_TYPES.creditCard);
+
+    await helpers.updateTransaction({
+      id: main.id,
+      payload: { note: 'Edited', paymentType: PAYMENT_TYPES.cash },
+      raw: true,
+    });
+
+    expect((await legsOf({ accountId: voucher.id }))[0]).toMatchObject({
+      note: 'Edited',
+      paymentType: PAYMENT_TYPES.voucher,
+    });
+    expect((await legsOf({ accountId: plain!.id }))[0]!.paymentType).toBe(PAYMENT_TYPES.creditCard);
   });
 });

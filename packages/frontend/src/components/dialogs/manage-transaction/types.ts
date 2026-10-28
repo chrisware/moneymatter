@@ -78,6 +78,8 @@ export interface UI_FORM_STRUCT {
   payeeId?: string | null;
   /** True when the form initialized from an existing tx whose category was already user-touched. Used to gate the Payee auto-fill so we don't clobber an explicit category. */
   categoryUserTouched?: boolean;
+  /** Set once the user or a prefill/template chose the payment type, so account switches stop applying the account default. */
+  paymentTypeUserTouched?: boolean;
   /** Entry for money that hasn't moved yet: no balance impact until it's confirmed. */
   isPlanned?: boolean;
   /** Decimal amount actually spent, in `originalCurrency`. Reaches the API only as a complete pair. */

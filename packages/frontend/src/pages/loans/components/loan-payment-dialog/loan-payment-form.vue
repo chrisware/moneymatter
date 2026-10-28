@@ -8,6 +8,7 @@ import AccountSelectField from '@/components/fields/account-select-field.vue';
 import FormRow from '@/components/dialogs/manage-transaction/components/form-row.vue';
 import { useDeleteTransaction, useSubmitTransaction } from '@/components/dialogs/manage-transaction/composables';
 import { useDefaultPaymentType } from '@/components/dialogs/manage-transaction/composables/use-default-payment-type';
+import { resolveAccountPaymentType } from '@/components/dialogs/manage-transaction/utils/resolve-account-payment-type';
 import { useLoans, useUnlinkLoanPayment } from '@/composable/data-queries/loans';
 import { useDateLocale } from '@/composable/use-date-locale';
 import { useNotificationCenter } from '@/components/notification-center';
@@ -212,7 +213,7 @@ const { defaultPaymentType } = useDefaultPaymentType();
 const paymentType = computed(() =>
   props.transaction
     ? (VERBOSE_PAYMENT_TYPES.find((item) => item.value === props.transaction?.paymentType) ?? null)
-    : defaultPaymentType.value,
+    : resolveAccountPaymentType({ account: form.value.account, fallback: defaultPaymentType.value }),
 );
 
 const buildFormStruct = ({ fallbackCategory }: { fallbackCategory: FormattedCategory }): UI_FORM_STRUCT => ({

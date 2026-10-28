@@ -103,7 +103,8 @@
       "debitCard": "Дебетова картка",
       "mobilePayment": "Мобільний платіж",
       "voucher": "Ваучер",
-      "webPayment": "Інтернет-платіж"
+      "webPayment": "Інтернет-платіж",
+      "none": "Немає"
     },
     "vehicleClasses": {
       "sedan": "Седан",

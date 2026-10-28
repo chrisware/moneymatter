@@ -25,6 +25,7 @@ export function slimAccountsForMcp(accounts: AccountApiResponse[]) {
     name: a.name,
     type: a.type,
     accountCategory: a.accountCategory,
+    defaultPaymentType: a.defaultPaymentType,
     currencyCode: a.currencyCode,
     currentBalance: a.currentBalance,
     refCurrentBalance: a.refCurrentBalance,
