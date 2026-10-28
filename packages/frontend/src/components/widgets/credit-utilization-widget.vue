@@ -38,14 +38,13 @@ const creditAccounts = computed(() => {
       // Provider-synced (non-system) cards report a balance that already nets off the
       // credit limit, so their drawn amount is the limit minus the balance at any sign.
       const balanceIncludesCreditLimit = a.type !== ACCOUNT_TYPES.system;
-      // Only breaks the tie at balance 0: with the setting on, a zero balance
-      // means the whole limit is drawn instead of an untouched card.
-      const zeroBalanceMeansFullyDrawn = !!userSettings.value?.includeCreditLimitInStats;
+      // With the setting off, manual cards track debt, so a positive balance is an overpayment.
+      const balanceIsAvailableCredit = !!userSettings.value?.includeCreditLimitInStats;
       const used = computeCreditUsed({
         balance: a.currentBalance,
         creditLimit: a.creditLimit,
         balanceIncludesCreditLimit,
-        zeroBalanceMeansFullyDrawn,
+        balanceIsAvailableCredit,
       });
       const limit = a.creditLimit;
       const utilization = limit > 0 ? Math.round((used / limit) * 100) : 0;
@@ -61,7 +60,7 @@ const creditAccounts = computed(() => {
           balance: a.refCurrentBalance,
           creditLimit: a.refCreditLimit,
           balanceIncludesCreditLimit,
-          zeroBalanceMeansFullyDrawn,
+          balanceIsAvailableCredit,
         }),
         refLimit: a.refCreditLimit,
       };
