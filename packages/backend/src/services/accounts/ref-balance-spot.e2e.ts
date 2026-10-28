@@ -50,6 +50,19 @@ const createEurAccount = async () => {
   });
 };
 
+/** EUR account with a credit limit whose ref side is left stale, as a previous day's rate would. */
+const createEurCreditAccount = async () => {
+  await helpers.addUserCurrencies({ currencyCodes: ['EUR'] });
+  const account = await helpers.createAccount({
+    payload: helpers.buildAccountPayload({ currencyCode: 'EUR', creditLimit: 1000 }),
+    raw: true,
+  });
+  await connection.sequelize.query(`UPDATE "Accounts" SET "refCreditLimit" = 1 WHERE "id" = :id`, {
+    replacements: { id: account.id },
+  });
+  return account;
+};
+
 describe('Account ref balances are spot measures', () => {
   afterEach(async () => {
     // ExchangeRates is a seed table (not truncated between tests) and the global
@@ -397,5 +410,57 @@ describe('Account ref balances are spot measures', () => {
         );
       }
     }
+  });
+
+  // The card and stats net the two ref fields, so a limit left at an earlier
+  // day's rate shows up as a phantom base-currency balance.
+  describe('refCreditLimit is re-measured at the same rate as refCurrentBalance', () => {
+    it('when a transaction moves the balance', async () => {
+      const account = await createEurCreditAccount();
+
+      await helpers.createTransaction({
+        payload: helpers.buildTransactionPayload({
+          accountId: account.id,
+          amount: 100,
+          transactionType: TRANSACTION_TYPES.income,
+        }),
+        raw: true,
+      });
+
+      const updated = await helpers.getAccount({ id: account.id, raw: true });
+      expect(decimalToCents(updated.refCreditLimit)).toEqualRefValue(100000 * SPOT_EUR_TO_AED);
+    });
+
+    it('when the balance is edited directly', async () => {
+      const account = await createEurCreditAccount();
+
+      await helpers.updateAccount({ id: account.id, payload: { currentBalance: 500 }, raw: true });
+
+      const updated = await helpers.getAccount({ id: account.id, raw: true });
+      expect(decimalToCents(updated.refCreditLimit)).toEqualRefValue(100000 * SPOT_EUR_TO_AED);
+    });
+
+    it('when the opening balance is edited', async () => {
+      const account = await createEurCreditAccount();
+
+      await helpers.updateAccount({ id: account.id, payload: { initialBalance: 500 }, raw: true });
+
+      const updated = await helpers.getAccount({ id: account.id, raw: true });
+      expect(decimalToCents(updated.refCreditLimit)).toEqualRefValue(100000 * SPOT_EUR_TO_AED);
+    });
+
+    it('when only the credit limit is edited, refCurrentBalance included', async () => {
+      const account = await createEurCreditAccount();
+      await helpers.updateAccount({ id: account.id, payload: { currentBalance: 100 }, raw: true });
+      await connection.sequelize.query(`UPDATE "Accounts" SET "refCurrentBalance" = 1 WHERE "id" = :id`, {
+        replacements: { id: account.id },
+      });
+
+      await helpers.updateAccount({ id: account.id, payload: { creditLimit: 2000 }, raw: true });
+
+      const updated = await helpers.getAccount({ id: account.id, raw: true });
+      expect(decimalToCents(updated.refCurrentBalance)).toEqualRefValue(10000 * SPOT_EUR_TO_AED);
+      expect(decimalToCents(updated.refCreditLimit)).toEqualRefValue(200000 * SPOT_EUR_TO_AED);
+    });
   });
 });

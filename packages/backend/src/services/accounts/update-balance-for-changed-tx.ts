@@ -104,7 +104,7 @@ async function updateAccountBalanceForChangedTxImpl({
   // fails. Dynamic import for the module-comment reason: it statically pulls in the
   // exchange-rate stack, which must not load while transactions.model is still in
   // the model loader.
-  const { measureSpotRefBalance } = await import('./measure-spot-ref-balance');
+  const { measureSpotRefBalance, measureSpotRefCreditLimit } = await import('./measure-spot-ref-balance');
   const refCurrentBalance =
     (await measureSpotRefBalance({
       // Owner of the account, not the tx author — ref balances live in the owner's
@@ -114,8 +114,13 @@ async function updateAccountBalanceForChangedTxImpl({
       baseCode: account.currencyCode,
       site: 'updateAccountBalanceForChangedTx',
     })) ?? account.refCurrentBalance;
+  const refCreditLimit =
+    (await measureSpotRefCreditLimit({ account, site: 'updateAccountBalanceForChangedTx' })) ?? account.refCreditLimit;
 
-  await Accounts.update({ currentBalance: newCurrentBalance, refCurrentBalance }, { where: { id: accountId } });
+  await Accounts.update(
+    { currentBalance: newCurrentBalance, refCurrentBalance, refCreditLimit },
+    { where: { id: accountId } },
+  );
 
   // A changed transaction can move the account's ledger boundary (its earliest
   // transaction date), and `refInitialBalance` is stamped at the boundary's rate.

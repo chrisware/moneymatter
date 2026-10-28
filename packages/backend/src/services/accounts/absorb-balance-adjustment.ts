@@ -11,7 +11,7 @@ import { lockAccountRow } from '@services/accounts/lock-account-row';
 import { isRevaluedAccount, scheduleBalanceRevalue } from '@services/balances/revalue-balance-history.service';
 
 import { withTransaction } from '../common/with-transaction';
-import { measureSpotRefBalance } from './measure-spot-ref-balance';
+import { measureSpotRefBalance, measureSpotRefCreditLimit } from './measure-spot-ref-balance';
 import { restampRefInitialBalance } from './restamp-ref-initial-balance';
 
 /**
@@ -63,6 +63,7 @@ export const absorbBalanceAdjustment = withTransaction(
       baseCode: account.currencyCode,
       site: 'absorbBalanceAdjustment',
     });
+    const refCreditLimit = await measureSpotRefCreditLimit({ account, site: 'absorbBalanceAdjustment' });
     const updated = await AccountsModel.updateAccountById({
       id: accountId,
       userId,
@@ -70,6 +71,7 @@ export const absorbBalanceAdjustment = withTransaction(
       // A missing rate must not abort an import/bank-sync absorb: omit the ref
       // column (the stored value stays) and let the daily remeasure self-heal it.
       ...(refCurrentBalance ? { refCurrentBalance } : {}),
+      ...(refCreditLimit ? { refCreditLimit } : {}),
       ...(isSystem ? { initialBalance: account.initialBalance.add(amountDelta) } : {}),
     });
     if (!updated) {
