@@ -210,6 +210,7 @@ const queryParams = computed(() => ({
   from: selectedPeriod.value.from,
   to: selectedPeriod.value.to,
   granularity: selectedGranularity.value,
+  alignToPayday: true,
 }));
 
 // Query params for previous period (for trend comparison)
@@ -217,6 +218,7 @@ const previousQueryParams = computed(() => ({
   from: previousPeriod.value.from,
   to: previousPeriod.value.to,
   granularity: selectedGranularity.value,
+  alignToPayday: true,
 }));
 
 const {

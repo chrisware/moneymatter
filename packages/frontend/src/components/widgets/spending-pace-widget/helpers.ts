@@ -1,5 +1,6 @@
+import { getPayPeriod } from '@/composable/use-period-navigation';
 import type { CashFlowPeriodData } from '@bt/shared/types';
-import { addDays, format, getDate, getDaysInMonth, startOfMonth, subMonths } from 'date-fns';
+import { addDays, addMonths, differenceInCalendarDays, format, subMonths } from 'date-fns';
 
 export const COMPARISON_MONTHS = 3;
 const TONE_THRESHOLD_PERCENT = 5;
@@ -36,32 +37,52 @@ const cumulative = ({ values }: { values: number[] }): number[] => {
   return values.map((value) => (total += value));
 };
 
+const daysInPayMonth = ({ start }: { start: Date }) => differenceInCalendarDays(addMonths(start, 1), start);
+
+/** The pay month containing `now`; payday 1 is the calendar month. Indexes are 0-based days from its start. */
+export const getPayMonth = ({ now, payday = 1 }: { now: Date; payday?: number }) => {
+  const { from: start, to: end } = getPayPeriod({ date: now, payday });
+  const daysInMonth = daysInPayMonth({ start });
+  const todayIndex = differenceInCalendarDays(now, start);
+  return {
+    start,
+    end,
+    prevStart: subMonths(start, 1),
+    daysInMonth,
+    todayIndex,
+    daysLeft: daysInMonth - todayIndex - 1,
+  };
+};
+
 /**
- * Daily expenses of the current month up to today, plus the previous calendar months
+ * Daily expenses of the current pay month up to today, plus the previous pay months
  * from the user's first month with any cash flow (oldest first).
  */
 export const splitDailyExpenses = ({
   periods,
   now,
+  payday = 1,
 }: {
   periods: DailyPeriod[];
   now: Date;
+  payday?: number;
 }): { currentMonth: number[]; fullMonths: number[][] } => {
   const byDate = new Map(periods.map((period) => [period.periodStart, period]));
   const daysOf = ({ month, length }: { month: Date; length: number }) =>
     Array.from({ length }, (_, i) => byDate.get(format(addDays(month, i), 'yyyy-MM-dd')));
   const toExpenses = ({ days }: { days: (DailyPeriod | undefined)[] }) => days.map((day) => day?.expenses ?? 0);
 
+  const { start, todayIndex } = getPayMonth({ now, payday });
   const pastMonths = Array.from({ length: COMPARISON_MONTHS }, (_, i) => {
-    const month = startOfMonth(subMonths(now, COMPARISON_MONTHS - i));
-    return daysOf({ month, length: getDaysInMonth(month) });
+    const month = subMonths(start, COMPARISON_MONTHS - i);
+    return daysOf({ month, length: daysInPayMonth({ start: month }) });
   });
   const firstActive = pastMonths.findIndex((days) =>
     days.some((day) => day !== undefined && (day.income !== 0 || day.expenses !== 0)),
   );
 
   return {
-    currentMonth: toExpenses({ days: daysOf({ month: startOfMonth(now), length: getDate(now) }) }),
+    currentMonth: toExpenses({ days: daysOf({ month: start, length: todayIndex + 1 }) }),
     fullMonths: firstActive === -1 ? [] : pastMonths.slice(firstActive).map((days) => toExpenses({ days })),
   };
 };

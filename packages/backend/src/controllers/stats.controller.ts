@@ -272,6 +272,7 @@ const cashFlowSchema = z.object({
       categoryIds: optionalCommaSeparatedIds(),
       excludedCategoryIds: optionalCommaSeparatedIds(),
       excludePlanned: booleanQuery().optional(),
+      alignToPayday: booleanQuery().optional(),
     }),
   ),
 });
@@ -291,6 +292,7 @@ export const getCashFlow = createController(cashFlowSchema, async ({ user, query
     categoryIds,
     excludedCategoryIds,
     excludePlanned,
+    alignToPayday,
   } = query;
 
   const result = await statsService.getCashFlow(
@@ -308,6 +310,7 @@ export const getCashFlow = createController(cashFlowSchema, async ({ user, query
       categoryIds,
       excludedCategoryIds,
       excludePlanned,
+      alignToPayday,
     }),
   );
 

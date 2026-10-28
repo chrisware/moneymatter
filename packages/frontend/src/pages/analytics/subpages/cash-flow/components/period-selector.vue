@@ -84,6 +84,9 @@ const lastPayPeriods = (count: number) => (): Period => {
 };
 
 const quickPresets = computed<DateSelectorPreset[]>(() => [
+  ...(props.payday !== 1
+    ? [{ label: t('analytics.cashFlow.periods.currentPayPeriod'), getValue: lastPayPeriods(1) }]
+    : []),
   {
     label: t('analytics.cashFlow.periods.last3Months'),
     getValue: lastPayPeriods(3),

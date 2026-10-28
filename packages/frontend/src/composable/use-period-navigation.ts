@@ -30,7 +30,7 @@ export const isFullMonthPeriod = ({ period, payday = 1 }: { period: Period; payd
   getDate(period.from) === payday && getDate(addDays(period.to, 1)) === payday;
 
 // Calendar-aligned ranges (year presets, months picked by hand) keep stepping by whole months under any payday.
-const isMonthAligned = ({ period, payday }: { period: Period; payday: number }): boolean =>
+export const isMonthAligned = ({ period, payday }: { period: Period; payday: number }): boolean =>
   isFullMonthPeriod({ period, payday }) || isFullMonthPeriod({ period });
 
 export const getPrevPeriod = ({ period, payday = 1 }: { period: Period; payday?: number }): Period => {

@@ -212,6 +212,8 @@ interface GetCashFlowParams {
   tagIds?: string[];
   excludedTagIds?: string[];
   excludePlanned?: boolean;
+  /** Starts `monthly` buckets on the user's payday instead of the 1st. */
+  alignToPayday?: boolean;
 }
 
 export const getCashFlow = async ({
@@ -227,6 +229,7 @@ export const getCashFlow = async ({
   tagIds,
   excludedTagIds,
   excludePlanned,
+  alignToPayday,
 }: GetCashFlowParams): Promise<GetCashFlowResponse> => {
   const params: Record<string, string | number | boolean> = {
     from: formatDate(from),
@@ -236,6 +239,7 @@ export const getCashFlow = async ({
 
   if (accountId !== undefined) params.accountId = accountId;
   if (excludePlanned) params.excludePlanned = true;
+  if (alignToPayday) params.alignToPayday = true;
 
   Object.assign(
     params,
