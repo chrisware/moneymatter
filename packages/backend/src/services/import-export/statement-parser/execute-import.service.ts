@@ -9,7 +9,6 @@ import {
   ACCOUNT_TYPES,
   CATEGORIZATION_TRIGGER,
   ImportSource,
-  PAYMENT_TYPES,
   TRANSACTION_TRANSFER_NATURE,
   TRANSACTION_TYPES,
 } from '@bt/shared/types';
@@ -193,7 +192,6 @@ async function executeImportImpl({
         note: tx.description,
         time: txDate,
         transactionType: tx.type === 'income' ? TRANSACTION_TYPES.income : TRANSACTION_TYPES.expense,
-        paymentType: PAYMENT_TYPES.creditCard,
         accountId,
         categoryId: defaultCategoryId,
         accountType: ACCOUNT_TYPES.system,

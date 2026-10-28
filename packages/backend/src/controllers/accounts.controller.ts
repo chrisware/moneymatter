@@ -1,4 +1,4 @@
-import { ACCOUNT_CATEGORIES, ACCOUNT_STATUSES, ACCOUNT_TYPES } from '@bt/shared/types';
+import { ACCOUNT_CATEGORIES, ACCOUNT_STATUSES, ACCOUNT_TYPES, PAYMENT_TYPES } from '@bt/shared/types';
 import { booleanQuery, currencyCode, recordId } from '@common/lib/zod/custom-types';
 import { Money } from '@common/types/money';
 import { findOrThrowNotFound } from '@common/utils/find-or-throw-not-found';
@@ -45,6 +45,7 @@ export const createAccount = createController(
     body: z
       .object({
         accountCategory: z.nativeEnum(ACCOUNT_CATEGORIES).default(ACCOUNT_CATEGORIES.general),
+        defaultPaymentType: z.nativeEnum(PAYMENT_TYPES).nullable().optional(),
         currencyCode: currencyCode(),
         name: z.string().trim().min(1),
         type: z.nativeEnum(ACCOUNT_TYPES).default(ACCOUNT_TYPES.system),
@@ -59,6 +60,7 @@ export const createAccount = createController(
   async ({ user, body }) => {
     const {
       accountCategory,
+      defaultPaymentType,
       currencyCode: currency,
       name,
       type,
@@ -80,6 +82,7 @@ export const createAccount = createController(
     // Convert decimal amounts to cents
     const account = await accountsService.createAccount({
       accountCategory,
+      defaultPaymentType,
       currencyCode: currency,
       name,
       type,
@@ -105,6 +108,7 @@ export const updateAccount = createController(
     body: z
       .object({
         accountCategory: z.nativeEnum(ACCOUNT_CATEGORIES).optional(),
+        defaultPaymentType: z.nativeEnum(PAYMENT_TYPES).nullable().optional(),
         name: z.string().trim().min(1).optional(),
         // Amount fields now accept decimals - conversion to cents happens below
         creditLimit: z.number().min(0).optional(),
@@ -123,6 +127,7 @@ export const updateAccount = createController(
     const { id: userId } = user;
     const {
       accountCategory,
+      defaultPaymentType,
       name,
       creditLimit,
       status,
@@ -175,6 +180,7 @@ export const updateAccount = createController(
         status,
         excludeFromStats,
         accountCategory,
+        defaultPaymentType,
         currentBalance: currentBalance !== undefined ? Money.fromDecimal(currentBalance) : undefined,
         initialBalance: initialBalance !== undefined ? Money.fromDecimal(initialBalance) : undefined,
         name,

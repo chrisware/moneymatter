@@ -31,16 +31,21 @@ import {
 } from '@bt/shared/types';
 import {
   type Locale,
+  addDays,
   addMonths,
   differenceInCalendarDays,
   differenceInCalendarMonths,
   format,
   getDate,
+  getDaysInMonth,
+  isAfter,
   isLastDayOfMonth,
   isSameMonth,
   isSameYear,
   isValid,
   parseISO,
+  setDate,
+  startOfDay,
   subDays,
 } from 'date-fns';
 
@@ -103,6 +108,86 @@ export const formatPeriodShortLabel = ({
   return `${fmt({ date: start, pattern: 'd' })} – ${fmt({ date: last, pattern: 'd MMM' })}`;
 };
 
+const secondAnchorDayOf = ({ day }: { day: number }): number =>
+  day < HALF_MONTH_DAYS ? day + HALF_MONTH_DAYS : day - (HALF_MONTH_DAYS - 1);
+
+const clampedDayOfMonth = ({ month, day }: { month: Date; day: number }): Date =>
+  setDate(month, Math.min(day, getDaysInMonth(month)));
+
+type PlanCadenceChoice = {
+  preset: BudgetCadencePreset;
+  /** Required by the `custom` preset. */
+  custom?: { unit: BudgetCustomCadenceUnit; every: number };
+};
+
+const cadenceOf = ({
+  preset,
+  custom,
+  startsOn,
+}: PlanCadenceChoice & { startsOn: Date }):
+  | { cadence: 'days' | 'months'; intervalN: number; anchorDate: string }
+  | { cadence: 'semi_monthly'; anchorDate: string; secondAnchorDay: number } => {
+  const anchorDate = format(startsOn, 'yyyy-MM-dd');
+
+  switch (preset) {
+    case 'monthly':
+      return { cadence: 'months', intervalN: 1, anchorDate };
+    case 'semiMonthly':
+      return {
+        cadence: 'semi_monthly',
+        anchorDate,
+        secondAnchorDay: secondAnchorDayOf({ day: getDate(startsOn) }),
+      };
+    case 'biweekly':
+      return { cadence: 'days', intervalN: BIWEEKLY_INTERVAL_DAYS, anchorDate };
+    case 'weekly':
+      return { cadence: 'days', intervalN: WEEKLY_INTERVAL_DAYS, anchorDate };
+    case 'custom':
+      if (!custom) throw new Error('The custom cadence preset needs an interval');
+      return { cadence: custom.unit, intervalN: custom.every, anchorDate };
+  }
+};
+
+const nextResetAfter = ({ preset, custom, startsOn }: PlanCadenceChoice & { startsOn: Date }): Date => {
+  const plan = cadenceOf({ preset, custom, startsOn });
+  switch (plan.cadence) {
+    case 'days':
+      return addDays(startsOn, plan.intervalN);
+    case 'months':
+      return addMonths(startsOn, plan.intervalN);
+    case 'semi_monthly':
+      return clampedDayOfMonth({
+        month: getDate(startsOn) < plan.secondAnchorDay ? startsOn : addMonths(startsOn, 1),
+        day: plan.secondAnchorDay,
+      });
+  }
+};
+
+/** A plan always starts in the current period, so its start must be on or before today with the next reset after today. */
+export const isValidPlanStart = ({
+  preset,
+  custom,
+  startsOn,
+  today = new Date(),
+}: PlanCadenceChoice & { startsOn: Date; today?: Date }): boolean => {
+  const day = startOfDay(startsOn);
+  const now = startOfDay(today);
+  return !isAfter(day, now) && isAfter(nextResetAfter({ preset, custom, startsOn: day }), now);
+};
+
+/** `custom.every` must already pass `isValidCustomInterval`. */
+export const earliestValidPlanStart = ({
+  preset,
+  custom,
+  today = new Date(),
+}: PlanCadenceChoice & { today?: Date }): Date => {
+  let earliest = startOfDay(today);
+  // ponytail: stops at the first invalid day, so semi-monthly on the 16th after a 31-day month
+  // hides the still-valid 31st; scan a full cycle if that matters.
+  while (isValidPlanStart({ preset, custom, startsOn: subDays(earliest, 1), today })) earliest = subDays(earliest, 1);
+  return earliest;
+};
+
 export const buildCreatePlanPayload = ({
   name,
   preset,
@@ -111,58 +196,15 @@ export const buildCreatePlanPayload = ({
   accountIds,
   carryPolicy,
   withSuggestedLines,
-}: {
+}: PlanCadenceChoice & {
   name: string;
-  preset: BudgetCadencePreset;
-  /** Required by the `custom` preset. */
-  custom?: { unit: BudgetCustomCadenceUnit; every: number };
   startsOn: Date;
   accountIds: string[];
   carryPolicy: BudgetPlanCarryPolicy;
   withSuggestedLines: boolean;
 }): CreateBudgetPlanPayload => {
   const type: BudgetPlanTypeKey = 'category_caps';
-  const anchorDate = format(startsOn, 'yyyy-MM-dd');
-  // Today is never sent: a client ahead of UTC would trip the backend's epoch-in-future check.
-  const isBackdated = anchorDate < format(new Date(), 'yyyy-MM-dd');
-  const base = {
-    name,
-    type,
-    accountIds,
-    carryPolicy,
-    withSuggestedLines,
-    ...(isBackdated && { epochDate: anchorDate }),
-  };
-  const day = getDate(startsOn);
-
-  switch (preset) {
-    case 'monthly':
-      return { ...base, cadence: 'months', intervalN: 1, anchorDate };
-    case 'semiMonthly':
-      return {
-        ...base,
-        cadence: 'semi_monthly',
-        anchorDate,
-        secondAnchorDay: day < HALF_MONTH_DAYS ? day + HALF_MONTH_DAYS : day - (HALF_MONTH_DAYS - 1),
-      };
-    case 'biweekly':
-      return {
-        ...base,
-        cadence: 'days',
-        intervalN: BIWEEKLY_INTERVAL_DAYS,
-        anchorDate,
-      };
-    case 'weekly':
-      return {
-        ...base,
-        cadence: 'days',
-        intervalN: WEEKLY_INTERVAL_DAYS,
-        anchorDate,
-      };
-    case 'custom':
-      if (!custom) throw new Error('The custom cadence preset needs an interval');
-      return { ...base, cadence: custom.unit, intervalN: custom.every, anchorDate };
-  }
+  return { name, type, accountIds, carryPolicy, withSuggestedLines, ...cadenceOf({ preset, custom, startsOn }) };
 };
 
 export const CARRY_POLICY_OPTIONS = BUDGET_PLAN_CARRY_POLICIES.map((value) => ({

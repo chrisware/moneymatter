@@ -47,6 +47,7 @@ export function serializeAccount(
     refCreditLimit: centsToApiDecimal(account.refCreditLimit),
     type: account.type,
     accountCategory: account.accountCategory,
+    defaultPaymentType: account.defaultPaymentType ?? null,
     currencyCode: account.currencyCode,
     userId: account.userId,
     externalId: isRecipient ? null : (account.externalId ?? null),

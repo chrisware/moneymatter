@@ -49,7 +49,8 @@
         "last12Months": "Останні 12 місяців",
         "thisYear": "Цього року",
         "previousYear": "Минулого року",
-        "allTime": "Весь час"
+        "allTime": "Весь час",
+        "currentPayPeriod": "Поточний платіжний цикл"
       },
       "composition": {
         "detail": "Деталізація",

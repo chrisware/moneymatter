@@ -137,6 +137,21 @@
                   @update:model-value="onExcludePlannedToggle"
                 />
               </div>
+
+              <div class="flex items-center justify-between gap-2 rounded-md px-2 py-2">
+                <span class="flex flex-col">
+                  <span class="text-sm font-medium">{{ $t('widgets.latestRecords.settings.scheduledTitle') }}</span>
+                  <span class="text-muted-foreground text-xs">
+                    {{ $t('widgets.latestRecords.settings.excludeScheduledDescription') }}
+                  </span>
+                </span>
+                <Switch
+                  data-testid="lr-exclude-scheduled-switch"
+                  :model-value="!includeScheduled"
+                  :disabled="isUpdating"
+                  @update:model-value="(value) => setIncludeScheduled({ value: !value })"
+                />
+              </div>
             </div>
           </div>
         </template>
@@ -164,7 +179,11 @@ import type { Ref } from 'vue';
 import { computed, inject, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 
-import { readLatestRecordsExclusions, readLatestRecordsTagsVariant } from '../latest-records-config';
+import {
+  readLatestRecordsExclusions,
+  readLatestRecordsIncludeScheduled,
+  readLatestRecordsTagsVariant,
+} from '../latest-records-config';
 
 const PANEL_TRANSITION_DURATION = 320;
 
@@ -178,6 +197,11 @@ const view = ref<View>('main');
 
 const exclusions = computed(() => readLatestRecordsExclusions({ widgetConfig: widgetConfigRef?.value }));
 const tagsVariant = computed(() => readLatestRecordsTagsVariant({ widgetConfig: widgetConfigRef?.value }));
+const includeScheduled = computed(() => readLatestRecordsIncludeScheduled({ widgetConfig: widgetConfigRef?.value }));
+const { setFlag: setIncludeScheduled } = useWidgetConfigFlag({
+  key: 'includeScheduled',
+  saveErrorKey: 'widgets.latestRecords.settings.scheduledSaveError',
+});
 const { isOn: showAccount, setFlag: setShowAccount } = useWidgetConfigFlag({
   key: 'showAccount',
   saveErrorKey: 'widgets.latestRecords.settings.showAccountSaveError',
@@ -203,6 +227,9 @@ const exclusionsSummary = computed(() => {
   }
   if (!includePlanned.value) {
     excluded.push(t('widgets.latestRecords.settings.plannedTitle'));
+  }
+  if (!includeScheduled.value) {
+    excluded.push(t('widgets.latestRecords.settings.scheduledTitle'));
   }
   return excluded.length === 0 ? t('widgets.latestRecords.settings.nothingExcluded') : excluded.join(', ');
 });

@@ -7,7 +7,7 @@ import {
   type BudgetPlanTrendPeriod,
 } from '@bt/shared/types';
 import { uk } from 'date-fns/locale';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import {
   availablePillClass,
@@ -19,6 +19,7 @@ import {
   buildPoolTakeBackPayload,
   cadenceLabel,
   defaultAssignmentScope,
+  earliestValidPlanStart,
   formatPeriodLabel,
   formatPeriodShortLabel,
   type GoalEditorState,
@@ -36,6 +37,7 @@ import {
   isAttachableAccount,
   isPastPeriod,
   isValidCustomInterval,
+  isValidPlanStart,
   layoutStateFrom,
   lineBarsOf,
   lineIdsWithHistory,
@@ -98,15 +100,6 @@ describe('buildCreatePlanPayload', () => {
   const custom = { unit: 'days' as const, every: 10 };
   const base = { name: 'Budget', accountIds: ['acc-1'], carryPolicy: 'floor' as const, withSuggestedLines: true };
 
-  beforeEach(() => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date(2026, 8, 5, 12));
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
   it('maps monthly to a one-month cadence anchored on the picked day', () => {
     expect(buildCreatePlanPayload({ ...base, preset: 'monthly', startsOn: new Date(2026, 8, 5) })).toEqual({
       ...base,
@@ -124,20 +117,12 @@ describe('buildCreatePlanPayload', () => {
       cadence: 'semi_monthly',
       anchorDate: '2026-09-03',
       secondAnchorDay: 18,
-      epochDate: '2026-09-03',
     });
   });
 
-  it('backdates the plan to a start date before today', () => {
-    expect(buildCreatePlanPayload({ ...base, preset: 'monthly', startsOn: new Date(2026, 7, 1) })).toMatchObject({
-      anchorDate: '2026-08-01',
-      epochDate: '2026-08-01',
-    });
-  });
-
-  it('leaves the epoch to the backend when the start date is today', () => {
-    const payload = buildCreatePlanPayload({ ...base, preset: 'monthly', startsOn: new Date(2026, 8, 5, 23, 30) });
-    expect(payload.anchorDate).toBe('2026-09-05');
+  it('leaves the epoch to the backend for a past start date', () => {
+    const payload = buildCreatePlanPayload({ ...base, preset: 'monthly', startsOn: new Date(2020, 7, 1) });
+    expect(payload.anchorDate).toBe('2020-08-01');
     expect(payload).not.toHaveProperty('epochDate');
   });
 
@@ -184,6 +169,89 @@ describe('buildCreatePlanPayload', () => {
       cadence: 'days',
       intervalN: 7,
     });
+  });
+});
+
+describe('isValidPlanStart / earliestValidPlanStart', () => {
+  it('accepts the 10 days of an every-10-days cycle ending today', () => {
+    const custom = { unit: 'days' as const, every: 10 };
+    const today = new Date(2026, 9, 15, 18);
+    for (let day = 6; day <= 15; day++) {
+      expect(
+        isValidPlanStart({ preset: 'custom', custom, startsOn: new Date(2026, 9, day), today }),
+        `day ${day}`,
+      ).toBe(true);
+    }
+    expect(isValidPlanStart({ preset: 'custom', custom, startsOn: new Date(2026, 9, 5), today })).toBe(false);
+    expect(earliestValidPlanStart({ preset: 'custom', custom, today })).toEqual(new Date(2026, 9, 6));
+  });
+
+  it('accepts monthly starts whose next reset is after today', () => {
+    const today = new Date(2026, 9, 15);
+    expect(isValidPlanStart({ preset: 'monthly', startsOn: new Date(2026, 8, 16), today })).toBe(true);
+    expect(isValidPlanStart({ preset: 'monthly', startsOn: new Date(2026, 8, 15), today })).toBe(false);
+    expect(earliestValidPlanStart({ preset: 'monthly', today })).toEqual(new Date(2026, 8, 16));
+  });
+
+  it('clamps a monthly reset from the 31st to the end of a shorter month', () => {
+    expect(isValidPlanStart({ preset: 'monthly', startsOn: new Date(2026, 2, 31), today: new Date(2026, 3, 29) })).toBe(
+      true,
+    );
+    expect(earliestValidPlanStart({ preset: 'monthly', today: new Date(2026, 3, 29) })).toEqual(new Date(2026, 2, 30));
+    expect(isValidPlanStart({ preset: 'monthly', startsOn: new Date(2026, 2, 31), today: new Date(2026, 3, 30) })).toBe(
+      false,
+    );
+    expect(earliestValidPlanStart({ preset: 'monthly', today: new Date(2026, 3, 30) })).toEqual(new Date(2026, 3, 1));
+  });
+
+  it('resets a first-half semi-monthly start on its second day of the same month', () => {
+    const today = new Date(2026, 9, 28);
+    expect(isValidPlanStart({ preset: 'semiMonthly', startsOn: new Date(2026, 9, 14), today })).toBe(true);
+    expect(isValidPlanStart({ preset: 'semiMonthly', startsOn: new Date(2026, 9, 13), today })).toBe(false);
+    expect(earliestValidPlanStart({ preset: 'semiMonthly', today })).toEqual(new Date(2026, 9, 14));
+  });
+
+  it('resets a second-half semi-monthly start on its second day of the next month', () => {
+    const today = new Date(2026, 9, 10);
+    expect(isValidPlanStart({ preset: 'semiMonthly', startsOn: new Date(2026, 8, 25), today })).toBe(true);
+    expect(isValidPlanStart({ preset: 'semiMonthly', startsOn: new Date(2026, 8, 24), today })).toBe(false);
+    expect(earliestValidPlanStart({ preset: 'semiMonthly', today })).toEqual(new Date(2026, 8, 25));
+  });
+
+  it('rejects a future start', () => {
+    const today = new Date(2026, 9, 15, 23, 59);
+    expect(isValidPlanStart({ preset: 'weekly', startsOn: new Date(2026, 9, 15), today })).toBe(true);
+    expect(isValidPlanStart({ preset: 'weekly', startsOn: new Date(2026, 9, 16), today })).toBe(false);
+  });
+
+  it('clamps a first-half semi-monthly reset to the end of February', () => {
+    const today = new Date(2027, 1, 28);
+    expect(isValidPlanStart({ preset: 'semiMonthly', startsOn: new Date(2027, 1, 14), today })).toBe(false);
+    expect(earliestValidPlanStart({ preset: 'semiMonthly', today })).toEqual(new Date(2027, 1, 15));
+  });
+
+  it('accepts custom monthly starts whose reset is after today', () => {
+    const custom = { unit: 'months' as const, every: 3 };
+    const today = new Date(2026, 9, 15);
+    expect(isValidPlanStart({ preset: 'custom', custom, startsOn: new Date(2026, 6, 16), today })).toBe(true);
+    expect(isValidPlanStart({ preset: 'custom', custom, startsOn: new Date(2026, 6, 15), today })).toBe(false);
+    expect(earliestValidPlanStart({ preset: 'custom', custom, today })).toEqual(new Date(2026, 6, 16));
+  });
+
+  it.each([
+    { preset: 'weekly' as const, earliest: new Date(2026, 9, 9), tooEarly: new Date(2026, 9, 8) },
+    { preset: 'biweekly' as const, earliest: new Date(2026, 9, 2), tooEarly: new Date(2026, 9, 1) },
+  ])('limits a $preset start to the current cycle', ({ preset, earliest, tooEarly }) => {
+    const today = new Date(2026, 9, 15);
+    expect(isValidPlanStart({ preset, startsOn: earliest, today })).toBe(true);
+    expect(isValidPlanStart({ preset, startsOn: tooEarly, today })).toBe(false);
+    expect(earliestValidPlanStart({ preset, today })).toEqual(earliest);
+  });
+
+  it('ignores the time of day', () => {
+    expect(
+      isValidPlanStart({ preset: 'monthly', startsOn: new Date(2026, 9, 15, 23, 30), today: new Date(2026, 9, 15, 8) }),
+    ).toBe(true);
   });
 });
 

@@ -1545,12 +1545,29 @@ describe('GET /stats/cash-flow — payday setting', () => {
       from: '2024-12-15',
       to: '2025-02-14',
       granularity: 'monthly',
+      alignToPayday: true,
       raw: true,
     });
 
     expect(result.periods.map(({ periodStart, periodEnd, income }) => ({ periodStart, periodEnd, income }))).toEqual([
       { periodStart: '2024-12-15', periodEnd: '2025-01-14', income: 100 },
       { periodStart: '2025-01-15', periodEnd: '2025-02-14', income: 100 },
+    ]);
+  });
+
+  it('keeps calendar buckets unless the caller opts in', async () => {
+    await helpers.patchUserSettings({ patch: { payday: 15 }, raw: true });
+
+    const result = await helpers.getCashFlow({
+      from: '2025-01-01',
+      to: '2025-02-28',
+      granularity: 'monthly',
+      raw: true,
+    });
+
+    expect(result.periods.map(({ periodStart, periodEnd }) => ({ periodStart, periodEnd }))).toEqual([
+      { periodStart: '2025-01-01', periodEnd: '2025-01-31' },
+      { periodStart: '2025-02-01', periodEnd: '2025-02-28' },
     ]);
   });
 });

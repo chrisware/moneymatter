@@ -2,6 +2,7 @@ import {
   isTwoLegTransfer,
   ACCOUNT_CATEGORIES,
   ACCOUNT_TYPES,
+  PAYMENT_TYPES,
   RESOURCE_TYPES,
   SHARE_PERMISSIONS,
   TRANSACTION_TRANSFER_NATURE,
@@ -41,6 +42,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 import { withTransaction } from '../common/with-transaction';
 import { createSingleRefund } from '../tx-refunds/create-single-refund.service';
+import { syncPaymentLegs } from './payment-legs';
 import { tryMergeIntoPlanned } from './planned-matching';
 import { assertPlannedCreateAllowed } from './planned-matching/assert-planned-invariants';
 import { manageSplits } from './splits';
@@ -261,10 +263,11 @@ export const createOppositeTransaction = async (params: CreateOppositeTransactio
     transferNature: oppositeTransferNature,
   });
 
-  const { currency: oppositeTxCurrency } = await Accounts.getAccountCurrency({
-    userId: destOwnerUserId,
-    id: destinationAccountId,
-  });
+  const { currency: oppositeTxCurrency, defaultPaymentType: destDefaultPaymentType } =
+    await Accounts.getAccountCurrency({
+      userId: destOwnerUserId,
+      id: destinationAccountId,
+    });
 
   const sourceUserBaseCurrency = await UsersCurrencies.getBaseCurrency({ userId });
   const destOwnerBaseCurrency = isCrossUser
@@ -319,7 +322,7 @@ export const createOppositeTransaction = async (params: CreateOppositeTransactio
     time: new Date(baseTransaction.time),
     transactionType:
       transactionType === TRANSACTION_TYPES.income ? TRANSACTION_TYPES.expense : TRANSACTION_TYPES.income,
-    paymentType: baseTransaction.paymentType,
+    paymentType: destDefaultPaymentType ?? baseTransaction.paymentType,
     accountId: destinationAccountId,
     categoryId: oppositeCategoryId,
     accountType: ACCOUNT_TYPES.system,
@@ -363,9 +366,13 @@ export const createTransaction = withTransaction(
     categoryIdIsExplicit = false,
     matchPlanned = false,
     applyAutomations = false,
+    paymentLegs,
     ...payload
   }: CreateTransactionParams): Promise<CreateTxResult> => {
     if (applyAutomations) payload.externalData = { ...payload.externalData, applyAutomations: true };
+    if (matchPlanned && paymentLegs?.length) {
+      throw new ValidationError({ message: t({ key: 'transactions.paymentLegsNotAllowed' }) });
+    }
 
     try {
       // Captured before the coercion below, which would hide a non-positive amount from
@@ -441,10 +448,11 @@ export const createTransaction = withTransaction(
         isDefaultCurrency: true,
       });
 
-      const { currency: generalTxCurrency } = await Accounts.getAccountCurrency({
+      const { currency: generalTxCurrency, defaultPaymentType } = await Accounts.getAccountCurrency({
         userId: accountOwnerUserId,
         id: accountId,
       });
+      const paymentType = payload.paymentType ?? defaultPaymentType ?? PAYMENT_TYPES.bankTransfer;
 
       // Recipients writing on a shared account whose currency they haven't connected
       // would otherwise trip `currencyNotConnected` inside the ref-amount lookup.
@@ -520,6 +528,7 @@ export const createTransaction = withTransaction(
         time: Date;
       } = {
         ...payload,
+        paymentType,
         time: payload.time ?? new Date(),
         amount,
         refAmount: amount,
@@ -760,6 +769,11 @@ export const createTransaction = withTransaction(
           });
           if (appliedLocation) transactions[0]!.location = appliedLocation;
         }
+      }
+
+      // Last, so the linked rows copy the category and payee the steps above settled on.
+      if (paymentLegs?.length) {
+        await syncPaymentLegs({ userId, mainTxId: baseTransaction!.id, legs: paymentLegs });
       }
 
       return transactions;

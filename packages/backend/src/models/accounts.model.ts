@@ -4,6 +4,7 @@ import {
   ACCOUNT_TYPES,
   type AccountExternalData,
   type EntityLogoPayload,
+  PAYMENT_TYPES,
   RecordId,
 } from '@bt/shared/types';
 import { IdColumn } from '@common/types/id-column';
@@ -27,6 +28,7 @@ interface AccountsAttributes {
   refCreditLimit: Money;
   type: ACCOUNT_TYPES;
   accountCategory: ACCOUNT_CATEGORIES;
+  defaultPaymentType: PAYMENT_TYPES | null;
   currencyCode: string;
   userId: number;
   externalId: string; // represents id from the original external system if exists
@@ -100,6 +102,12 @@ export default class Accounts extends Model {
     validate: { isIn: [Object.values(ACCOUNT_CATEGORIES)] },
   })
   accountCategory!: ACCOUNT_CATEGORIES;
+
+  @Column({
+    allowNull: true,
+    type: DataType.ENUM(...Object.values(PAYMENT_TYPES)),
+  })
+  defaultPaymentType!: PAYMENT_TYPES | null;
 
   @ForeignKey(() => Currencies)
   @Column({ type: DataType.STRING(3) })
@@ -240,6 +248,7 @@ export interface CreateAccountPayload extends EntityLogoPayload {
   status?: AccountsAttributes['status'];
   excludeFromStats?: AccountsAttributes['excludeFromStats'];
   accountCategory: AccountsAttributes['accountCategory'];
+  defaultPaymentType?: AccountsAttributes['defaultPaymentType'];
   currencyCode: AccountsAttributes['currencyCode'];
   name: AccountsAttributes['name'];
   initialBalance: AccountsAttributes['initialBalance'];
@@ -280,6 +289,7 @@ export interface UpdateAccountByIdPayload extends EntityLogoPayload {
   userId: AccountsAttributes['userId'];
   externalId?: AccountsAttributes['externalId'];
   accountCategory?: AccountsAttributes['accountCategory'];
+  defaultPaymentType?: AccountsAttributes['defaultPaymentType'];
   // currency updating is disabled
   // currencyCode?: AccountsAttributes['currencyCode'];
   name?: AccountsAttributes['name'];

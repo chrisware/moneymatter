@@ -40,6 +40,7 @@ import {
 } from '@services/sharing/get-shared-accounts.service';
 import { convertCrossUserTransfersForAccountIds } from '@services/sharing/household/convert-cross-user-transfers.service';
 import { pauseAutomationsReferencing } from '@services/transaction-automations/references';
+import { unlinkPaymentLegsOfAccounts } from '@services/transactions/payment-legs';
 import { Op } from 'sequelize';
 
 import { absorbBalanceAdjustment } from './accounts/absorb-balance-adjustment';
@@ -368,8 +369,11 @@ export const updateAccount = withTransaction(
 
     const currentBalanceIsChanging =
       payload.currentBalance !== undefined && !payload.currentBalance.equals(accountData.currentBalance);
+    const creditLimitIsChanging =
+      payload.creditLimit !== undefined && !payload.creditLimit.equals(accountData.creditLimit);
     let initialBalance: Money = accountData.initialBalance;
     let refCurrentBalance: Money = accountData.refCurrentBalance;
+    let refCreditLimit: Money = accountData.refCreditLimit;
 
     /**
      * If `currentBalance` is changing, it means user want to change current balance
@@ -385,33 +389,24 @@ export const updateAccount = withTransaction(
       if (accountData.type === ACCOUNT_TYPES.system) {
         initialBalance = initialBalance.add(diff);
       }
-
-      // `refCurrentBalance` is a spot measure – the new native balance at the latest
-      // rate – not the stored ref plus a delta (that would keep the stored blend of
-      // historical rates alive). Cache bypassed so a just-edited rate is observed.
-      refCurrentBalance = await calculateRefAmount({
-        userId: accountData.userId,
-        amount: payload.currentBalance!,
-        baseCode: accountData.currencyCode,
-        date: new Date(),
-        bypassCache: true,
-      });
     }
 
-    // Credit limit changes recalculate refCreditLimit. It's separate from balance –
-    // it doesn't affect currentBalance/refCurrentBalance; the display layer applies
-    // it via `displayBalance = currentBalance - creditLimit`.
-    const creditLimitIsChanging =
-      payload.creditLimit !== undefined && !payload.creditLimit.equals(accountData.creditLimit);
-    let adjustedRefCreditLimit: Money | undefined;
+    // Both ref fields are spot measures at the latest rate (cache bypassed so a
+    // just-edited rate is observed). Re-measure them together: the card and stats
+    // net them as `refCurrentBalance - refCreditLimit`, so they must share a rate.
+    if (currentBalanceIsChanging || creditLimitIsChanging) {
+      const measureSpot = ({ amount }: { amount: Money }) =>
+        calculateRefAmount({
+          userId: accountData.userId,
+          amount,
+          baseCode: accountData.currencyCode,
+          date: new Date(),
+          bypassCache: true,
+        });
+      const nextCreditLimit = payload.creditLimit ?? accountData.creditLimit;
 
-    if (creditLimitIsChanging) {
-      adjustedRefCreditLimit = await calculateRefAmount({
-        userId: accountData.userId,
-        amount: payload.creditLimit!,
-        baseCode: accountData.currencyCode,
-        date: new Date(),
-      });
+      refCurrentBalance = await measureSpot({ amount: payload.currentBalance ?? accountData.currentBalance });
+      refCreditLimit = nextCreditLimit.isZero() ? Money.zero() : await measureSpot({ amount: nextCreditLimit });
     }
 
     const logoPatch = applyManualLogoPatch({
@@ -429,7 +424,7 @@ export const updateAccount = withTransaction(
       ...logoPatch,
       initialBalance,
       refCurrentBalance,
-      ...(adjustedRefCreditLimit !== undefined ? { refCreditLimit: adjustedRefCreditLimit } : {}),
+      refCreditLimit,
     });
 
     if (!result) {
@@ -476,7 +471,7 @@ export const updateAccount = withTransaction(
 
     // Today's net-worth row is a stock equal to the spot `refCurrentBalance`. Pin it
     // last, after the restamp's history cascade, so the spot value wins.
-    if (currentBalanceIsChanging && !revalueOwnsHistory) {
+    if ((currentBalanceIsChanging || creditLimitIsChanging) && !revalueOwnsHistory) {
       await Balances.setTodayRowToSpot({ account: finalAccount });
     }
 
@@ -550,6 +545,8 @@ const deleteAccountByIdInTx = withTransaction(
     if (removePortfolioTransfers) {
       await removePortfolioTransfersForAccounts({ userId, accountIds: [id] });
     }
+
+    await unlinkPaymentLegsOfAccounts({ userId, accountIds: [id] });
 
     const affectedRows = await Accounts.deleteAccountById({ id, userId });
     if (affectedRows === 0) {

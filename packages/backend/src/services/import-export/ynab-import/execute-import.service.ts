@@ -1,7 +1,6 @@
 import {
   ACCOUNT_TYPES,
   ImportSource,
-  PAYMENT_TYPES,
   TRANSACTION_TRANSFER_NATURE,
   TRANSACTION_TYPES,
   YNAB_FLAG_HEX,
@@ -257,7 +256,6 @@ async function executeYnabImportImpl({
         note: tx.memo,
         time: parseIsoToDate(tx.date),
         transactionType,
-        paymentType: PAYMENT_TYPES.creditCard,
         accountType: ACCOUNT_TYPES.system,
         transferNature: TRANSACTION_TRANSFER_NATURE.not_transfer,
         categoryId,
@@ -308,7 +306,6 @@ async function executeYnabImportImpl({
         note: xfer.memo,
         time: parseIsoToDate(xfer.date),
         transactionType: TRANSACTION_TYPES.expense,
-        paymentType: PAYMENT_TYPES.creditCard,
         accountType: ACCOUNT_TYPES.system,
         transferNature: TRANSACTION_TRANSFER_NATURE.common_transfer,
         destinationAccountId,

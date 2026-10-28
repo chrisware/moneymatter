@@ -25,6 +25,7 @@ export function slimAccountsForMcp(accounts: AccountApiResponse[]) {
     name: a.name,
     type: a.type,
     accountCategory: a.accountCategory,
+    defaultPaymentType: a.defaultPaymentType,
     currencyCode: a.currencyCode,
     currentBalance: a.currentBalance,
     refCurrentBalance: a.refCurrentBalance,
@@ -81,6 +82,8 @@ export function slimTransactionsForMcp(txs: TransactionApiResponse[]) {
       splits: tx.splits.map((s) => ({ categoryId: s.categoryId, amount: s.amount, note: s.note })),
     }),
     ...(tx.transactionGroups && { transactionGroups: tx.transactionGroups }),
+    ...(tx.paymentParts && { paymentParts: tx.paymentParts }),
+    ...(tx.paymentTotal !== undefined && { paymentTotal: tx.paymentTotal }),
   }));
 }
 

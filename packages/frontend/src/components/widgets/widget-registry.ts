@@ -81,17 +81,6 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     ],
     component: () => import('@/components/widgets/latest-records.vue'),
     needsPeriod: false,
-    configOptions: [
-      {
-        key: 'includeScheduled',
-        label: 'widgets.latestRecords.config.includeScheduled.label',
-        defaultValue: 'true',
-        choices: [
-          { value: 'true', label: 'widgets.latestRecords.config.includeScheduled.on' },
-          { value: 'false', label: 'widgets.latestRecords.config.includeScheduled.off' },
-        ],
-      },
-    ],
   },
   'category-spending-tracker': {
     id: 'category-spending-tracker',

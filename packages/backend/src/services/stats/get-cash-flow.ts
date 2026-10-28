@@ -38,6 +38,8 @@ interface GetCashFlowParams extends StatsScopeFilters {
   excludedCategoryIds?: RecordId[];
   /** Drops pending planned rows, leaving only money that actually moved. */
   excludePlanned?: boolean;
+  /** Starts `monthly` buckets on the user's payday instead of the 1st. */
+  alignToPayday?: boolean;
 }
 
 type CategoryInfo = AccessibleCategoryInfo;
@@ -121,9 +123,10 @@ export const getCashFlow = withTransaction(
     categoryIds,
     excludedCategoryIds,
     excludePlanned,
+    alignToPayday,
   }: GetCashFlowParams): Promise<GetCashFlowResponse> => {
     const { savingsCategoryIds, payday } = await getUserSettings({ userId });
-    const buckets = generatePeriodBuckets({ from, to, granularity, payday });
+    const buckets = generatePeriodBuckets({ from, to, granularity, payday: alignToPayday ? payday : 1 });
 
     if (granularity === 'daily' && buckets.length > MAX_DAILY_BUCKETS) {
       throw new ValidationError({

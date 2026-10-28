@@ -1,5 +1,9 @@
 <script setup lang="ts">
-import { ACCOUNT_CATEGORIES_TRANSLATION_KEYS } from '@/common/const';
+import {
+  ACCOUNT_CATEGORIES_TRANSLATION_KEYS,
+  NO_PAYMENT_TYPE_OPTION,
+  NULLABLE_PAYMENT_TYPE_OPTIONS,
+} from '@/common/const';
 import * as Collapsible from '@/components/lib/ui/collapsible';
 import { Separator } from '@/components/lib/ui/separator';
 import * as Tabs from '@/components/lib/ui/tabs';
@@ -16,6 +20,9 @@ import { useI18n } from 'vue-i18n';
 const CreditLimitEditPopover = defineAsyncComponent(() => import('./credit-limit-edit-popover.vue'));
 const InitialBalanceEditPopover = defineAsyncComponent(() => import('./initial-balance-edit-popover.vue'));
 const AccountCategoryEditPopover = defineAsyncComponent(() => import('./account-category-edit-popover.vue'));
+const AccountDefaultPaymentTypeEditPopover = defineAsyncComponent(
+  () => import('./account-default-payment-type-edit-popover.vue'),
+);
 
 const { t } = useI18n();
 
@@ -32,6 +39,13 @@ const { isOwner } = useAccountAccess(toRef(() => props.account));
 // Loan and vehicle categories are locked to their dedicated flows on the backend.
 const isCategoryEditable = computed(
   () => isOwner.value && !isDedicatedFlowAccountCategory(props.account.accountCategory),
+);
+const defaultPaymentTypeLabelKey = computed(
+  () =>
+    (
+      NULLABLE_PAYMENT_TYPE_OPTIONS.find((option) => option.value === (props.account.defaultPaymentType ?? null)) ??
+      NO_PAYMENT_TYPE_OPTION
+    ).label,
 );
 const isInitialBalanceEditable = computed(
   () => isCategoryEditable.value && props.account.type === ACCOUNT_TYPES.system,
@@ -73,6 +87,16 @@ const isInitialBalanceEditable = computed(
           </span>
 
           <AccountCategoryEditPopover v-if="isCategoryEditable" :account="account" />
+        </div>
+      </div>
+      <Separator />
+      <div class="flex items-center justify-between gap-2">
+        <span>{{ t('pages.account.details.defaultPaymentType') }}</span>
+
+        <div class="flex items-center gap-1.5">
+          <span>{{ t(defaultPaymentTypeLabelKey) }}</span>
+
+          <AccountDefaultPaymentTypeEditPopover v-if="isOwner" :account="account" />
         </div>
       </div>
       <Separator />

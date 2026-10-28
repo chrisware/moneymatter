@@ -1,6 +1,11 @@
 <script setup lang="ts">
 import { createAccount } from '@/api';
-import { VUE_QUERY_GLOBAL_PREFIXES } from '@/common/const';
+import {
+  NO_PAYMENT_TYPE_OPTION,
+  NULLABLE_PAYMENT_TYPE_OPTIONS,
+  type NullablePaymentTypeOption,
+  VUE_QUERY_GLOBAL_PREFIXES,
+} from '@/common/const';
 import { ACCOUNT_CATEGORIES_TRANSLATION_KEYS } from '@/common/const/account-categories-verbose';
 import AccountLogo from '@/components/common/account-logo.vue';
 import DocsLink from '@/components/common/docs-link.vue';
@@ -8,6 +13,7 @@ import { type LogoSelection, toOptionalLogoPayload } from '@/components/common/l
 import LogoSquareField from '@/components/common/logo-square-field.vue';
 import FieldLabel from '@/components/fields/components/field-label.vue';
 import InputField from '@/components/fields/input-field.vue';
+import SelectField from '@/components/fields/select-field.vue';
 import UiButton from '@/components/lib/ui/button/Button.vue';
 import * as Select from '@/components/lib/ui/select';
 import { NotificationType, useNotificationCenter } from '@/components/notification-center';
@@ -50,6 +56,7 @@ const form = reactive<{
   name: string;
   currencyCode: string;
   accountCategory: ACCOUNT_CATEGORIES;
+  defaultPaymentType: NullablePaymentTypeOption | null;
   initialBalance: number;
   creditLimit: number;
   /** Chosen brand or monogram. null = no logo; the account renders its account-type chip (accounts have no auto-resolution). */
@@ -58,6 +65,7 @@ const form = reactive<{
   name: '',
   currencyCode: String(defaultCurrency.value),
   accountCategory: defaultAccountCategory,
+  defaultPaymentType: NO_PAYMENT_TYPE_OPTION,
   initialBalance: 0,
   creditLimit: 0,
   logo: null,
@@ -94,6 +102,7 @@ const submit = async () => {
       currencyCode: form.currencyCode,
       name: form.name.trim(),
       accountCategory: form.accountCategory,
+      defaultPaymentType: form.defaultPaymentType?.value ?? null,
       creditLimit: form.creditLimit,
       initialBalance: form.initialBalance,
       ...toOptionalLogoPayload({ selection: form.logo }),
@@ -206,6 +215,13 @@ const submit = async () => {
         </Select.SelectContent>
       </Select.Select>
     </FieldLabel>
+
+    <SelectField
+      v-model="form.defaultPaymentType"
+      :values="NULLABLE_PAYMENT_TYPE_OPTIONS"
+      :label-key="(item) => $t(item.label)"
+      :label="$t('forms.createAccount.defaultPaymentTypeLabel')"
+    />
 
     <input-field
       v-model="form.creditLimit"

@@ -1,4 +1,4 @@
-import { ACCOUNT_TYPES, PAYMENT_TYPES, TRANSACTION_TRANSFER_NATURE, TRANSACTION_TYPES } from '@bt/shared/types';
+import { ACCOUNT_TYPES, TRANSACTION_TRANSFER_NATURE, TRANSACTION_TYPES } from '@bt/shared/types';
 import type { RecordId } from '@bt/shared/types';
 import { ExternalMonobankTransactionResponse } from '@bt/shared/types/external-services';
 import { Money } from '@common/types/money';
@@ -526,7 +526,6 @@ async function createMonobankTransaction({
     accountId,
     userId,
     transactionType: data.amount > 0 ? TRANSACTION_TYPES.income : TRANSACTION_TYPES.expense,
-    paymentType: PAYMENT_TYPES.creditCard,
     categoryId,
     transferNature: TRANSACTION_TRANSFER_NATURE.not_transfer,
     accountType: ACCOUNT_TYPES.monobank,

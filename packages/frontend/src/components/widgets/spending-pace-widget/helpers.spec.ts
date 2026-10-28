@@ -4,6 +4,7 @@ import {
   comparisonCumulative,
   computeSpendingPace,
   formatPacePercent,
+  getPayMonth,
   parseCompareMode,
   parseSpikePercent,
   spikeContributorsCount,
@@ -131,6 +132,47 @@ describe('splitDailyExpenses', () => {
     });
 
     expect(fullMonths).toEqual([]);
+  });
+
+  it('splits by pay months when a payday is set', () => {
+    const payNow = new Date(2026, 9, 28);
+    const { currentMonth, fullMonths } = splitDailyExpenses({
+      periods: [
+        day({ date: '2026-07-22', expenses: 0, income: 100 }),
+        day({ date: '2026-09-21', expenses: 5 }),
+        day({ date: '2026-09-22', expenses: 40 }),
+        day({ date: '2026-10-22', expenses: 7 }),
+        day({ date: '2026-10-28', expenses: 3 }),
+      ],
+      now: payNow,
+      payday: 22,
+    });
+
+    expect(currentMonth).toEqual([7, 0, 0, 0, 0, 0, 3]);
+    expect(fullMonths.map((days) => days.length)).toEqual([31, 31, 30]);
+    expect(fullMonths[1]![30]).toBe(5);
+    expect(fullMonths[2]![0]).toBe(40);
+
+    const { start, daysInMonth, todayIndex, daysLeft } = getPayMonth({ now: payNow, payday: 22 });
+    expect([start, daysInMonth, todayIndex, daysLeft]).toEqual([new Date(2026, 9, 22), 31, 6, 24]);
+  });
+
+  it.each([
+    {
+      name: 'before the payday, across the year end',
+      now: new Date(2027, 0, 10),
+      payday: 22,
+      expected: [new Date(2026, 11, 22), 31, 19, 11],
+    },
+    {
+      name: 'a pay month starting in February',
+      now: new Date(2027, 2, 5),
+      payday: 28,
+      expected: [new Date(2027, 1, 28), 28, 5, 22],
+    },
+  ])('finds the pay month $name', ({ now: payNow, payday, expected }) => {
+    const { start, daysInMonth, todayIndex, daysLeft } = getPayMonth({ now: payNow, payday });
+    expect([start, daysInMonth, todayIndex, daysLeft]).toEqual(expected);
   });
 });
 

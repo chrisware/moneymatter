@@ -770,6 +770,44 @@ describe('LunchFlow Data Provider E2E', () => {
       expect(after.map((tx) => tx.id).toSorted()).toEqual(kept.map((tx) => tx.id).toSorted());
       expect(after.filter((tx) => tx.originalId === removed!.originalId)).toEqual([]);
     });
+
+    it("applies the account's defaultPaymentType to synced transactions", async () => {
+      const { connectionId } = await helpers.bankDataProviders.connectProvider({
+        providerType: BANK_PROVIDER_TYPE.LUNCHFLOW,
+        credentials: { apiKey: VALID_LUNCHFLOW_API_KEY },
+        raw: true,
+      });
+      const { accounts: externalAccounts } = await helpers.bankDataProviders.listExternalAccounts({
+        connectionId,
+        raw: true,
+      });
+      const externalId = externalAccounts[0]!.externalId;
+      const mockBank = () =>
+        global.mswMockServer.use(
+          getLunchFlowTransactionsMock({ response: helpers.lunchflow.mockedTransactionData(2), accountId: externalId }),
+          getLunchFlowBalanceMock({ accountId: externalId }),
+        );
+
+      mockBank();
+      const { syncedAccounts } = await helpers.bankDataProviders.connectSelectedAccounts({
+        connectionId,
+        accountExternalIds: [externalId],
+        raw: true,
+      });
+      const accountId = syncedAccounts[0]!.id;
+      const initialIds = (await helpers.getTransactions({ accountIds: [accountId], raw: true })).map((tx) => tx.id);
+
+      await helpers.updateAccount({ id: accountId, payload: { defaultPaymentType: PAYMENT_TYPES.cash }, raw: true });
+
+      mockBank();
+      await helpers.bankDataProviders.syncTransactionsForAccount({ connectionId, accountId, raw: true });
+
+      const newlySynced = (await helpers.getTransactions({ accountIds: [accountId], raw: true })).filter(
+        (tx) => !initialIds.includes(tx.id),
+      );
+      expect(newlySynced.length).toBe(2);
+      expect(newlySynced.every((tx) => tx.paymentType === PAYMENT_TYPES.cash)).toBe(true);
+    });
   });
 
   describe('Disconnect and reconnect flow', () => {

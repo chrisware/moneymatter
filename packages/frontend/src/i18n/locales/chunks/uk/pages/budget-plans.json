@@ -106,6 +106,7 @@
       "goToAccounts": "Перейти до рахунків",
       "cadenceLabel": "Оновлюється",
       "startsOnLabel": "Починається",
+      "startsOnOutOfRange": "Виберіть дату від {from} до сьогодні.",
       "accountsLabel": "Рахунки",
       "accountsPlaceholder": "Виберіть рахунки",
       "rolloverLabel": "Перенесення",

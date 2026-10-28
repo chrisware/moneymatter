@@ -1,5 +1,6 @@
 import { Money } from '@common/types/money';
 import { logger } from '@js/utils/logger';
+import type Accounts from '@models/accounts.model';
 import { calculateRefAmount } from '@services/calculate-ref-amount.service';
 
 /**
@@ -41,4 +42,21 @@ export async function measureSpotRefBalance({
     );
     return null;
   }
+}
+
+/** Same rate, date and cache rules as `measureSpotRefBalance`; `null` means rate unavailable, keep the stored value. */
+export async function measureSpotRefCreditLimit({
+  account,
+  site,
+}: {
+  account: Pick<Accounts, 'userId' | 'creditLimit' | 'currencyCode'>;
+  site: string;
+}): Promise<Money | null> {
+  if (account.creditLimit.isZero()) return Money.zero();
+  return measureSpotRefBalance({
+    userId: account.userId,
+    amount: account.creditLimit,
+    baseCode: account.currencyCode,
+    site: `${site}:refCreditLimit`,
+  });
 }

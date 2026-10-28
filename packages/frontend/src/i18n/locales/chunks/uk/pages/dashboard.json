@@ -428,13 +428,6 @@
       "loadFailed": "Не вдалося завантажити регулярні платежі"
     },
     "latestRecords": {
-      "config": {
-        "includeScheduled": {
-          "label": "Включити регулярні платежі",
-          "on": "Увім.",
-          "off": "Вимк."
-        }
-      },
       "settings": {
         "excludeTitle": "Виключити транзакції",
         "excludeTransfersDescription": "Приховати перекази між власними рахунками",
@@ -443,6 +436,9 @@
         "excludeBalanceAdjustmentsDescription": "Приховати транзакції коригування балансу",
         "plannedTitle": "Заплановані транзакції",
         "excludePlannedDescription": "Приховати непідтверджені заплановані транзакції зі списку",
+        "scheduledTitle": "Регулярні платежі",
+        "excludeScheduledDescription": "Приховати найближчі та прострочені регулярні платежі зі списку",
+        "scheduledSaveError": "Не вдалося зберегти налаштування регулярних платежів. Спробуйте ще раз.",
         "nothingExcluded": "Нічого не виключено",
         "tagsStyleTitle": "Теги",
         "tagsStyleNames": "Назви",

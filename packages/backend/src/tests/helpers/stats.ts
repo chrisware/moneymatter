@@ -199,6 +199,7 @@ export async function getCashFlow<R extends boolean | undefined = undefined>({
   categoryIds,
   excludedCategoryIds,
   excludePlanned,
+  alignToPayday,
   raw,
 }: {
   from: string;
@@ -213,6 +214,7 @@ export async function getCashFlow<R extends boolean | undefined = undefined>({
   categoryIds?: string[];
   excludedCategoryIds?: string[];
   excludePlanned?: boolean;
+  alignToPayday?: boolean;
   raw?: R;
 }) {
   const params = new URLSearchParams();
@@ -226,6 +228,7 @@ export async function getCashFlow<R extends boolean | undefined = undefined>({
     params.append('excludedCategoryIds', excludedCategoryIds.join(','));
   }
   if (excludePlanned !== undefined) params.append('excludePlanned', String(excludePlanned));
+  if (alignToPayday !== undefined) params.append('alignToPayday', String(alignToPayday));
 
   const result = await helpers.makeRequest<GetCashFlowResponse, R>({
     method: 'get',

@@ -13,6 +13,7 @@ import {
 import { PillTabs } from '@/components/lib/ui/pill-tabs';
 import { useNotificationCenter } from '@/components/notification-center';
 import { usePayeeLookup } from '@/composable/data-queries/payees';
+import { useUserSettings } from '@/composable/data-queries/user-settings';
 import { useFormatCurrency } from '@/composable/formatters';
 import { useDateLocale } from '@/composable/use-date-locale';
 import { captureException } from '@/lib/sentry';
@@ -23,7 +24,7 @@ import { GaugeIcon } from '@lucide/vue';
 import { useQuery } from '@tanstack/vue-query';
 import { useElementSize } from '@vueuse/core';
 import { area, line, scaleLinear } from 'd3';
-import { addDays, endOfMonth, format, getDate, getDaysInMonth, startOfMonth, subMonths } from 'date-fns';
+import { addDays, format, subMonths } from 'date-fns';
 import { storeToRefs } from 'pinia';
 import { type Ref, computed, inject, ref, useTemplateRef, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
@@ -35,6 +36,7 @@ import WidgetWrapper from '../components/widget-wrapper.vue';
 import {
   COMPARISON_MONTHS,
   type CompareMode,
+  getPayMonth,
   parseCompareMode,
   type PaceTone,
   computeSpendingPace,
@@ -86,11 +88,12 @@ const { isAppInitialized } = storeToRefs(useRootStore());
 const { categoriesMap } = storeToRefs(useCategoriesStore());
 const { byId: payeesById } = usePayeeLookup();
 
+const { data: userSettings, isPending: isSettingsPending } = useUserSettings();
+const payday = computed(() => userSettings.value?.payday ?? 1);
+const isReady = computed(() => isAppInitialized.value && !isSettingsPending.value);
+
 const now = new Date();
-const monthStart = startOfMonth(now);
-const daysInMonth = getDaysInMonth(now);
-const todayIndex = getDate(now) - 1;
-const daysLeft = daysInMonth - todayIndex - 1;
+const payMonth = computed(() => getPayMonth({ now, payday: payday.value }));
 
 const widgetConfigRef = inject<Ref<DashboardWidgetConfig> | null>('dashboard-widget-config', null);
 const saveWidgetConfig = inject<
@@ -131,23 +134,23 @@ const setSpikePercent = async ({ value }: { value: number }) => {
 };
 
 const { data, isFetching, isError, error, refetch } = useQuery({
-  queryKey: [...VUE_QUERY_CACHE_KEYS.widgetSpendingPace, format(now, 'yyyy-MM')],
+  queryKey: computed(() => [...VUE_QUERY_CACHE_KEYS.widgetSpendingPace, format(payMonth.value.start, 'yyyy-MM-dd')]),
   queryFn: () =>
     getCashFlow({
-      from: startOfMonth(subMonths(now, COMPARISON_MONTHS)),
-      to: endOfMonth(now),
+      from: subMonths(payMonth.value.start, COMPARISON_MONTHS),
+      to: payMonth.value.end,
       granularity: 'daily',
       excludePlanned: true,
     }),
   staleTime: Infinity,
-  enabled: isAppInitialized,
+  enabled: isReady,
 });
 
 watch(error, (value) => {
   if (value) captureException({ error: value, context: { scope: `${SENTRY_SCOPE}:load` } });
 });
 
-const split = computed(() => splitDailyExpenses({ periods: data.value?.periods ?? [], now }));
+const split = computed(() => splitDailyExpenses({ periods: data.value?.periods ?? [], now, payday: payday.value }));
 const fullMonthsCount = computed(() => split.value.fullMonths.length);
 const hasHistory = computed(() => fullMonthsCount.value > 0);
 
@@ -155,23 +158,23 @@ const pace = computed(() =>
   computeSpendingPace({
     currentMonth: split.value.currentMonth,
     comparisonMonths: compareMode.value === 'last' ? split.value.fullMonths.slice(-1) : split.value.fullMonths,
-    daysInMonth,
+    daysInMonth: payMonth.value.daysInMonth,
   }),
 );
 const comparison = computed(() => pace.value.comparison);
 const tone = computed(() => TONES[comparison.value?.tone ?? 'neutral']);
-const hasForecast = computed(() => !!comparison.value && daysLeft > 0);
+const hasForecast = computed(() => !!comparison.value && payMonth.value.daysLeft > 0);
 const forecastSpikeDays = computed(() => {
   const lastMonth = split.value.fullMonths.at(-1);
   if (compareMode.value !== 'last' || !lastMonth) return [];
   return spikeDays({ values: lastMonth, percent: spikePercent.value }).filter(
-    (day) => day > todayIndex && day < daysInMonth,
+    (day) => day > payMonth.value.todayIndex && day < payMonth.value.daysInMonth,
   );
 });
 
 const comparisonName = computed(() =>
   compareMode.value === 'last'
-    ? formatLocal(subMonths(now, 1), 'LLL')
+    ? formatLocal(payMonth.value.prevStart, 'LLL')
     : t('dashboard.widgets.spendingPace.comparison.average', { n: comparison.value?.monthsCount ?? 0 }),
 );
 
@@ -194,7 +197,11 @@ const stats = computed(() => {
       label: t('dashboard.widgets.spendingPace.stats.total', { name: comparisonName.value }),
       value: formatWholeBaseCurrency(value.total),
     },
-    { key: 'daysLeft', label: t('dashboard.widgets.spendingPace.stats.daysLeft'), value: String(daysLeft) },
+    {
+      key: 'daysLeft',
+      label: t('dashboard.widgets.spendingPace.stats.daysLeft'),
+      value: String(payMonth.value.daysLeft),
+    },
   ];
 });
 
@@ -212,6 +219,7 @@ const { width, height } = useElementSize(plotRef);
 const geometry = computed(() => {
   if (width.value <= 0 || height.value <= PLOT_TOP_PX) return null;
   const { spent, spentCumulative } = pace.value;
+  const { daysInMonth, todayIndex } = payMonth.value;
   const cmp = comparison.value;
   const top = Math.max(spent, cmp?.forecast ?? 0, cmp?.total ?? 0) * Y_HEADROOM || 1;
   const x = scaleLinear()
@@ -247,6 +255,7 @@ const geometry = computed(() => {
 });
 
 const axisTicks = computed(() => {
+  const { start, daysInMonth, todayIndex } = payMonth.value;
   const left = ({ day }: { day: number }) => `${((day - 1) / (daysInMonth - 1)) * 100}%`;
   const shift = ({ day }: { day: number }) => {
     if (day === 1) return 'translate-x-0';
@@ -258,9 +267,7 @@ const axisTicks = computed(() => {
     const isToday = day === todayDay;
     return {
       key: isToday ? 'today' : String(day),
-      label: isToday
-        ? t('dashboard.widgets.spendingPace.chart.today')
-        : formatLocal(addDays(monthStart, day - 1), 'MMM d'),
+      label: isToday ? t('dashboard.widgets.spendingPace.chart.today') : formatLocal(addDays(start, day - 1), 'MMM d'),
       left: left({ day }),
       shift: shift({ day }),
       isToday,
@@ -272,13 +279,13 @@ const hoverIndex = ref<number | null>(null);
 const onPointer = (event: PointerEvent) => {
   const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
   const ratio = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
-  hoverIndex.value = Math.round(ratio * (daysInMonth - 1));
+  hoverIndex.value = Math.round(ratio * (payMonth.value.daysInMonth - 1));
 };
 
 const spikeDate = computed<string | null>(() => {
   const day = hoverIndex.value;
   if (day === null || !forecastSpikeDays.value.includes(day)) return null;
-  return format(addDays(startOfMonth(subMonths(now, 1)), day), 'yyyy-MM-dd');
+  return format(addDays(payMonth.value.prevStart, day), 'yyyy-MM-dd');
 });
 
 const { data: spikeTransactions, error: spikeError } = useQuery({
@@ -307,7 +314,7 @@ const spikeBreakdown = computed(() => {
   const items = spikeTransactions.value;
   if (!spikeDate.value || day === null || spikeError.value || items?.length === 0) return null;
   const title = t('dashboard.widgets.spendingPace.tooltip.spikeFrom', {
-    date: formatLocal(addDays(startOfMonth(subMonths(now, 1)), day), 'MMM d'),
+    date: formatLocal(addDays(payMonth.value.prevStart, day), 'MMM d'),
   });
   if (!items) return { title, rows: null };
   const amounts = items.map((tx) => Math.abs(tx.refAmount));
@@ -328,13 +335,14 @@ const hover = computed(() => {
   const chart = geometry.value;
   if (day === null || !chart) return null;
   const cmp = comparison.value;
+  const { start, todayIndex } = payMonth.value;
   const isPast = day <= todayIndex;
   if (!isPast && !cmp) return null;
 
   const x = chart.x(day);
   return {
     x,
-    date: formatLocal(addDays(monthStart, day), 'MMM d'),
+    date: formatLocal(addDays(start, day), 'MMM d'),
     isToday: day === todayIndex,
     spent: isPast ? pace.value.spentCumulative[day]! : null,
     forecast: isPast ? null : (cmp?.forecastCumulative[day] ?? null),
@@ -346,7 +354,7 @@ const hover = computed(() => {
   };
 });
 
-const isInitialLoading = computed(() => !data.value && (isFetching.value || !isAppInitialized.value));
+const isInitialLoading = computed(() => !data.value && (isFetching.value || !isReady.value));
 const isEmpty = computed(() => !hasHistory.value && pace.value.spent === 0);
 </script>
 
@@ -389,7 +397,7 @@ const isEmpty = computed(() => !hasHistory.value && pace.value.spent === 0);
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p class="text-muted-foreground text-xs">
-            {{ $t('dashboard.widgets.spendingPace.spentIn', { month: formatLocal(now, 'LLL') }) }}
+            {{ $t('dashboard.widgets.spendingPace.spentIn', { month: formatLocal(payMonth.start, 'LLL') }) }}
           </p>
           <p class="text-2xl font-bold tracking-tight tabular-nums">{{ formatBaseCurrency(pace.spent) }}</p>
           <div v-if="comparison" class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">

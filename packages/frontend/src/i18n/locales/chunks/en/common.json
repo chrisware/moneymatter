@@ -103,7 +103,8 @@
       "debitCard": "Debit card",
       "mobilePayment": "Mobile payment",
       "voucher": "Voucher",
-      "webPayment": "Web payment"
+      "webPayment": "Web payment",
+      "none": "None"
     },
     "vehicleClasses": {
       "sedan": "Sedan",
@@ -169,6 +170,13 @@
         "selectRow": "Select transaction",
         "unselectableReasons": {
           "sharedAccount": "Can't be selected: this transaction is on an account shared with you, and only its owner can edit it."
+        },
+        "payment": {
+          "paidFrom": "Paid from {count} accounts",
+          "receivedInto": "Received into {count} accounts",
+          "partOf": "Part of a {total} payment",
+          "thisAccount": "(this account)",
+          "loadError": "Couldn't open this transaction. Try again."
         }
       }
     },
