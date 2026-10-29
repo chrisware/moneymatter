@@ -53,8 +53,9 @@ const tokenCache = new Map<string, CachedToken>();
 /**
  * TrueLayer Data API v3 client.
  *
- * Auth model: POST /connect/token (grant_type=client_credentials, scope `data`)
- * for a short-lived bearer, cached per app; every data call adds
+ * Auth model: POST /connect/token (grant_type=client_credentials, no scope —
+ * the token then carries the app's dashboard-configured data scopes) for a
+ * short-lived bearer, cached per app; every data call adds
  * `Connection-Id` identifying the user's authorized data connection.
  *
  * Docs: https://docs.truelayer.com/reference/welcome-api-reference
@@ -112,7 +113,6 @@ export class TrueLayerApiClient {
         grant_type: 'client_credentials',
         client_id: this.credentials.clientId,
         client_secret: this.credentials.clientSecret,
-        scope: 'data',
       });
 
       const entry: CachedToken = {
@@ -390,6 +390,12 @@ export class TrueLayerApiClient {
       if (status === 400 && isInvalidState(problem)) {
         if (tolerateInvalidState) return INVALID_STATE_SENTINEL;
         return new ForbiddenError({ message: t({ key: 'bankDataProviders.truelayer.consentNotActive' }) });
+      }
+
+      // TrueLayer refuses to start an authorization journey when this
+      // instance's callback URL is not in the app's Redirect URIs list.
+      if (status === 403 && method === 'createDataConnection') {
+        return new ForbiddenError({ message: t({ key: 'bankDataProviders.truelayer.redirectUriNotRegistered' }) });
       }
 
       if (status === 401 || status === 403) {

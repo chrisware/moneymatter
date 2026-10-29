@@ -66,10 +66,15 @@ export const getTrueLayerTransactionsRequestErrorMock = ({ status = 503 }: { sta
   );
 
 export const trueLayerHandlers = [
-  // POST /connect/token — client_credentials app token.
+  // POST /connect/token — client_credentials app token. Mirrors the real
+  // auth server: a `scope` parameter that isn't configured on the app is
+  // rejected, so the client must request tokens without one.
   http.post(`${TL_AUTH_BASE_URL}/connect/token`, async ({ request }) => {
     const body = await request.json().catch(() => null);
-    const { client_id, client_secret, grant_type } = (body ?? {}) as Record<string, string>;
+    const { client_id, client_secret, grant_type, scope } = (body ?? {}) as Record<string, string>;
+    if (scope) {
+      return HttpResponse.json({ error: 'invalid_scope' }, { status: 400 });
+    }
     if (
       grant_type !== 'client_credentials' ||
       client_id !== VALID_TL_CLIENT_ID ||
