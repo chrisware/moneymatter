@@ -78,3 +78,20 @@ export function getValidLocale(locale: string | undefined | null): SupportedLoca
   }
   return DEFAULT_LOCALE;
 }
+
+/**
+ * Resolve a BCP 47 tag or Accept-Language header to a supported locale.
+ * Each entry tries the full tag (`pt-BR`) before its base language (`en-US` → `en`).
+ * Entries are tried in list order; `q=` weights are ignored.
+ */
+export function resolveLocale({ tag }: { tag: string | undefined | null }): SupportedLocale {
+  const locales = Object.values(SUPPORTED_LOCALES);
+  const findLocale = (code: string) => locales.find((locale) => locale.toLowerCase() === code);
+
+  for (const entry of (tag ?? '').split(',')) {
+    const code = entry.split(';')[0]!.trim().toLowerCase();
+    const match = code && (findLocale(code) ?? findLocale(code.split('-')[0]!));
+    if (match) return match;
+  }
+  return DEFAULT_LOCALE;
+}
