@@ -44,6 +44,12 @@ const logos: Record<BANK_PROVIDER_TYPE, { icon: { dark: string; light: string } 
       light: 'https://cdn.brandfetch.io/simplefin.org/w/400/h/400/theme/dark/icon.jpeg',
     },
   },
+  [BANK_PROVIDER_TYPE.AKAHU]: {
+    icon: {
+      dark: 'https://cdn.brandfetch.io/akahu.io/w/400/h/400/theme/light/icon.jpeg',
+      light: 'https://cdn.brandfetch.io/akahu.io/w/400/h/400/theme/dark/icon.jpeg',
+    },
+  },
 };
 
 defineProps<{ provider: BANK_PROVIDER_TYPE }>();

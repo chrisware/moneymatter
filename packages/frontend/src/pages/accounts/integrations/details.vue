@@ -269,8 +269,16 @@
             <InputField
               v-model="newApiKey"
               type="password"
-              :label="$t('pages.integrations.updateCredentials.apiKeyLabel')"
-              :placeholder="$t('pages.integrations.updateCredentials.apiKeyPlaceholder')"
+              :label="
+                connectionDetails.providerType === BANK_PROVIDER_TYPE.AKAHU
+                  ? $t('pages.integrations.akahu.userTokenLabel')
+                  : $t('pages.integrations.updateCredentials.apiKeyLabel')
+              "
+              :placeholder="
+                connectionDetails.providerType === BANK_PROVIDER_TYPE.AKAHU
+                  ? $t('pages.integrations.akahu.userTokenPlaceholder')
+                  : $t('pages.integrations.updateCredentials.apiKeyPlaceholder')
+              "
             />
             <TextareaField
               v-if="connectionDetails.providerType === BANK_PROVIDER_TYPE.WALUTOMAT"
@@ -278,6 +286,13 @@
               :rows="6"
               :label="$t('pages.integrations.walutomat.privateKeyLabel')"
               :placeholder="$t('pages.integrations.walutomat.privateKeyPlaceholder')"
+            />
+            <InputField
+              v-else-if="connectionDetails.providerType === BANK_PROVIDER_TYPE.AKAHU"
+              v-model="newPrivateKey"
+              type="password"
+              :label="$t('pages.integrations.akahu.appTokenLabel')"
+              :placeholder="$t('pages.integrations.akahu.appTokenPlaceholder')"
             />
           </div>
           <DialogFooter class="mt-6 grid gap-3 sm:grid-cols-2">
@@ -540,7 +555,10 @@ const { mutate: updateCredentialsMutation, isPending: isUpdatingCredentials } = 
 
 const canUpdateCredentials = computed(() => {
   if (!newApiKey.value) return false;
-  if (connectionDetails.value?.providerType === BANK_PROVIDER_TYPE.WALUTOMAT) {
+  if (
+    connectionDetails.value?.providerType === BANK_PROVIDER_TYPE.WALUTOMAT ||
+    connectionDetails.value?.providerType === BANK_PROVIDER_TYPE.AKAHU
+  ) {
     return !!newPrivateKey.value;
   }
   return true;
