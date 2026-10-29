@@ -481,6 +481,7 @@
     },
     "table": {
       "total": "Total",
+      "net": "Net",
       "collapseAll": "Collapse all",
       "expandAll": "Expand all",
       "expandRow": "Expand",
