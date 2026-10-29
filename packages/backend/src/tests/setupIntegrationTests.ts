@@ -13,6 +13,7 @@ import { REDIS_KEY_PREFIX, redisClient, redisReady } from '@root/redis-client';
 import { categorizationQueue, categorizationWorker } from '@services/ai-categorization/categorization-queue';
 import { flushAllPendingCategorizationBuffers } from '@services/ai-categorization/event-listeners';
 import { backupRestoreQueue, backupRestoreWorker } from '@services/backup/restore/restore-queue';
+import { drainConnectionMetadataWrites } from '@services/bank-data-providers/base-provider';
 import { closeAllMonobankQueueBundles } from '@services/bank-data-providers/monobank/transaction-sync-queue';
 import { accountSyncQueue, accountSyncWorker } from '@services/bank-data-providers/sync/account-sync-queue';
 import { logoResolutionQueue, logoResolutionWorker } from '@services/brand-logos';
@@ -177,8 +178,12 @@ beforeAll(async () => {
   // Wait for i18next to fully load all locale files before tests run
   await i18nextReady;
 }, 30_000);
-afterEach(() => {
+afterEach(async () => {
   mswMockServer.resetHandlers();
+  // Flush best-effort detached connection-metadata writes so a subsequent
+  // status read (in-test or next test) sees committed state and the next
+  // truncate doesn't block behind a pending bypassed write.
+  await drainConnectionMetadataWrites();
   // Reset Enable Banking session counter to ensure test isolation
   // The counter persists across tests and affects mock responses for reconnection testing
   resetSessionCounter();
@@ -361,6 +366,9 @@ beforeEach(async () => {
 
     // Schema comes from template database (created in setup-e2e-tests.sh).
     // We just need to truncate data between tests.
+    // Flush best-effort detached connection writes first: they bypass the sync
+    // transaction and would otherwise strand behind the TRUNCATE's lock.
+    await drainConnectionMetadataWrites();
     await truncateAllTables();
 
     // ExchangeRates is preserved across tests (it's in SEED_DATA_TABLES) so the

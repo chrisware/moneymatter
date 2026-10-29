@@ -28,6 +28,7 @@ MoneyMatter connects through six providers. Some talk to one bank directly, othe
 | **SimpleFIN** | USA and Canada | **Paid** | **Easy to setup** | A SimpleFIN Bridge account with your bank linked, and a **Setup token** from the Bridge dashboard. |
 | **Monobank** | Ukraine | **Free** | **Easy to setup** | A personal **API Token**, which you create at api.monobank.ua. The token is read-only. |
 | **Enable Banking** (**Beta**) | EU and UK. 6,000+ banks through open banking. | **Free** | **Very difficult to setup** | Your own Enable Banking developer application: its **Application ID** and **Private Key**. |
+| **TrueLayer** (**Beta**) | UK. Most major banks (HSBC, Barclays, Monzo, Starling, NatWest and more) through open banking. | **Paid** | **Medium setup** | Your own TrueLayer application from the TrueLayer Console: its **Client ID** and **Client Secret**. TrueLayer charges per connected bank account (the sandbox is free for testing). |
 | **Walutomat** | Poland. The currency exchange platform, with 23 currencies. | **Free** | **Medium setup** | An **API Key** and **Private Key (PEM)**. You create a key pair and upload the public key in Walutomat (Settings → API). |
 | **Akahu** | New Zealand. Most major banks (ASB, Westpac, BNZ, ANZ, Kiwibank and more) through open banking. | **Free** | **Medium setup** | Your own Akahu personal app: its **App Token** and **User Token**. You create the app and grant it access in your Akahu dashboard (my.akahu.nz). |
 
@@ -43,7 +44,7 @@ Enable Banking doesn't offer an affordable ready-made connection, so you registe
 
 1. In the sidebar, open **Accounts** → **All Accounts**.
 2. In the **Bank connections** section, click **Connect bank**.
-3. In **Add Integration**, pick your region to narrow the list (**All**, **US & Canada**, **EU & UK**, **New Zealand**, **Ukraine** or **Poland**), then choose a provider. If you chose Enable Banking, follow [Connect with Enable Banking](#connect-with-enable-banking) instead.
+3. In **Add Integration**, pick your region to narrow the list (**All**, **US & Canada**, **EU & UK**, **New Zealand**, **Ukraine** or **Poland**), then choose a provider. If you chose Enable Banking or TrueLayer, follow [Connect with Enable Banking](#connect-with-enable-banking) or [Connect with TrueLayer](#connect-with-truelayer) instead.
 4. Paste your credentials and click **Connect**. Each form has a help link, such as **Where do I get an API token?**, with instructions for getting them.
 5. Choose the accounts to add, then click the button below the list (see [Choosing accounts](#choosing-accounts)).
 
@@ -53,8 +54,8 @@ You'll see "Transactions are syncing in the background". The accounts appear rig
 
 <Screenshot
   src="/screenshots/import/bank-add-integration.png"
-  alt="The Add Integration dialog with region filters at the top and the list of providers: Lunch Flow, SimpleFIN, Monobank, Enable Banking, Walutomat and Akahu."
-  hint="On a Plus or trial account, open /accounts and click Connect bank. Keep the All filter selected so all six providers show with their region, price and setup labels. Crop to the dialog."
+  alt="The Add Integration dialog with region filters at the top and the list of providers: Lunch Flow, SimpleFIN, Akahu, TrueLayer, Monobank, Enable Banking and Walutomat."
+  hint="On a Plus or trial account, open /accounts and click Connect bank. Keep the All filter selected so all seven providers show with their region, price and setup labels. Crop to the dialog."
 />
 
 ### Choosing accounts
@@ -85,6 +86,22 @@ Enable Banking sends you to your bank's website to approve access:
 </Steps>
 
 Finish in the same browser you started in. MoneyMatter remembers the pending connection in that browser, and elsewhere you'll see "Connection ID not found. Please start the connection process again."
+
+### Connect with TrueLayer
+
+TrueLayer sends you to its own hosted page to pick your bank and approve access:
+
+<Steps>
+
+1. Choose **TrueLayer**, enter your **Client ID** and **Client Secret** from the [TrueLayer Console](https://console.truelayer.com), and click **Connect**. Pick **Sandbox** instead of **Production** if you're just testing — sandbox uses fake banks and costs nothing.
+2. Click **Continue to TrueLayer**. You're taken to TrueLayer's authorization page.
+3. Choose your bank (HSBC, Barclays, Monzo and others) and approve the connection. You may be bounced through your bank's own login and strong-authentication screens.
+4. Back in MoneyMatter, you'll see **Connection Successful!** and then the connection's page. If your bank is still finalizing the consent, MoneyMatter retries automatically for a few seconds.
+5. Click **Connect Accounts**, tick the accounts you want, and click **Connect Selected Accounts**.
+
+</Steps>
+
+Before connecting in **Production**, register MoneyMatter's redirect URL (shown on the connection form) under your TrueLayer application's allowed redirect URIs. The connection lasts about 6 months; MoneyMatter prompts you to reconnect when it's nearly up.
 
 ## What happens to your connected accounts
 
@@ -125,7 +142,7 @@ Both accounts must use the same currency. If they don't, you'll see **⚠️ Can
 What linking does:
 
 - **Your existing transactions stay as they are.**
-- **The history you entered yourself isn't downloaded again.** With Monobank, SimpleFIN, Lunch Flow and Akahu, syncing starts from the moment you link. With Enable Banking and Walutomat, it starts from your newest transaction in the account.
+- **The history you entered yourself isn't downloaded again.** With Monobank, SimpleFIN, Lunch Flow, Akahu and TrueLayer, syncing starts from the moment you link. With Enable Banking and Walutomat, it starts from your newest transaction in the account.
 - **The balance becomes your bank's balance.** Any difference between the two is absorbed into the account's initial balance. No extra transaction is created.
 - **The account now follows the bank's rules.** See [what you can edit](#what-you-can-edit).
 
@@ -167,6 +184,7 @@ If you use **Sync Now** in the header less than 4 hours after the last sync, Mon
 | SimpleFIN | The last 6 months |
 | Walutomat | The last 12 months |
 | Enable Banking | As much as your bank allows: about 3 years, 2 years, 1 year or 90 days, depending on the bank |
+| TrueLayer | The last 12 months |
 | Lunch Flow | Whatever Lunch Flow has for the account |
 | Akahu | As far back as your Akahu app can see: up to 2 years |
 
@@ -174,7 +192,7 @@ After that, each sync picks up from your newest transaction.
 
 ### Load older history
 
-For **Monobank**, **SimpleFIN** and **Akahu** accounts, you can fetch older transactions yourself:
+For **Monobank**, **SimpleFIN**, **Akahu** and **TrueLayer** accounts, you can fetch older transactions yourself:
 
 <Steps>
 
@@ -200,7 +218,7 @@ For an account you [linked](#link-an-account-you-already-have), you can't load t
 - **New transactions start in your default category** (usually **Other**), unless the payee has a [default category](/transactions/payees/#default-category). MoneyMatter then tries to categorize them automatically with AI. Review the categories and fix any it got wrong.
 - **Transfers between your own connected accounts are linked automatically.** When MoneyMatter finds exactly one match with the same amount and currency, in the opposite direction, within 3 days, it turns the pair into a [transfer](/transfers-and-refunds/how-transfers-work/). To also match against accounts you track by hand, turn on [Match transfers with manual accounts](/settings/general-settings/#match-transfers-with-manual-accounts).
 - **Walutomat currency exchanges** between your wallets are linked as transfers.
-- **Pending card payments**: with Enable Banking, they're saved only if you turn on [Import pending bank transactions](/settings/general-settings/#import-pending-bank-transactions), and when the bank books the payment, the pending copy is merged into it. Monobank saves card payments that are still on hold straight away, and those aren't linked as transfers automatically. You can [link them yourself](/transfers-and-refunds/link-existing-transactions/).
+- **Pending card payments**: with Enable Banking, they're saved only if you turn on [Import pending bank transactions](/settings/general-settings/#import-pending-bank-transactions), and when the bank books the payment, the pending copy is merged into it. TrueLayer only imports transactions once the bank has booked them, so on-hold card payments appear on the next sync. Monobank saves card payments that are still on hold straight away, and those aren't linked as transfers automatically. You can [link them yourself](/transfers-and-refunds/link-existing-transactions/).
 
 ## What you can edit
 
@@ -232,7 +250,7 @@ Open the connection's page from the gear button (**Manage connection**) on the *
 
 - the connection's name, whether it's **Active**, and when it was connected,
 - the **Total balance**, how many **Accounts** are connected and the **Last sync**,
-- for Enable Banking, how many days of **Consent** are left,
+- for Enable Banking or TrueLayer, how many days of **Consent** are left,
 - the **Connected Accounts** list.
 
 The **Manage** menu at the top has **Rename connection** and **Disconnect Integration**.
@@ -253,9 +271,9 @@ Click **Manage** → **Rename connection**, enter a new **Connection Name** and 
 
 ## Reconnect a connection
 
-### When Enable Banking consent runs out
+### When Enable Banking or TrueLayer consent runs out
 
-Banks only let an app like MoneyMatter read your data for a limited time. MoneyMatter asks for the longest period your bank allows, or 90 days if the bank doesn't say. When that time is almost up (7 days or fewer), the connection shows **Expiring soon**. After that it shows **Expired** and stops syncing. You'll also see **Connections need reconnecting** in the header's sync popover, and **Connection expired** on the account's **Data Connection** tab.
+Banks only let an app like MoneyMatter read your data for a limited time. MoneyMatter asks for the longest period your bank allows — 90 days with Enable Banking if the bank doesn't say, about six months with TrueLayer. When that time is almost up (7 days or fewer), the connection shows **Expiring soon**. After that it shows **Expired** and stops syncing. You'll also see **Connections need reconnecting** in the header's sync popover, and **Connection expired** on the account's **Data Connection** tab.
 
 To renew it:
 
@@ -278,7 +296,7 @@ Your accounts are matched up again and keep syncing into the same MoneyMatter ac
 
 ### When your credentials stop working
 
-For the other providers, a connection is switched off when the bank or service keeps rejecting your credentials. The connection's page then says "This connection needs to be reconnected before it can sync again". Click **Update Credentials**. The field is labelled **API Key** for every provider: paste your new Monobank API token, a new SimpleFIN Setup token or your new Lunch Flow API key. For Walutomat, also paste the **Private Key (PEM)**. Then click **Update**.
+Outside the consent flow, a connection is switched off when the bank or service keeps rejecting your credentials. The connection's page then says "This connection needs to be reconnected before it can sync again". Click **Update Credentials**. The field is labelled **API Key** for every provider: paste your new Monobank API token, a new SimpleFIN Setup token or your new Lunch Flow API key. For Walutomat, also paste the **Private Key (PEM)**. For Akahu, the two fields are your **User Token** and **App Token**. For TrueLayer, they're your **Client ID** and **Client Secret**. Then click **Update**.
 
 ## Disconnect a bank
 

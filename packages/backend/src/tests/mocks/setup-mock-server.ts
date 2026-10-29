@@ -12,6 +12,7 @@ import { monobankHandlers } from './monobank/mock-api';
 import { openAiCompatibleHandlers } from './openai-compatible/mock-api';
 import { openAiHandlers } from './openai/mock-api';
 import { simplefinHandlers } from './simplefin/mock-api';
+import { trueLayerHandlers } from './truelayer/mock-api';
 import { walutomatHandlers } from './walutomat/mock-api';
 
 export const setupMswServer = () =>
@@ -23,6 +24,7 @@ export const setupMswServer = () =>
     ...walutomatHandlers,
     ...simplefinHandlers,
     ...akahuHandlers,
+    ...trueLayerHandlers,
     ...anthropicHandlers,
     ...openAiHandlers,
     ...geminiHandlers,

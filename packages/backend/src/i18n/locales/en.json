@@ -363,6 +363,22 @@
       "accountNotFound": "Akahu account not found.",
       "rateLimited": "Akahu is rate-limiting requests right now. Please try again shortly."
     },
+    "truelayer": {
+      "invalidCredentialsFormat": "Invalid TrueLayer credentials format. Client ID and Client Secret are required.",
+      "invalidCredentials": "Invalid TrueLayer credentials. Check the Client ID and Client Secret from your TrueLayer Console application.",
+      "authUrlNotFound": "Authorization URL not found for this connection. Start the reconnect flow.",
+      "noAuthUrl": "TrueLayer did not return an authorization URL for this connection.",
+      "noPendingAuthorization": "No bank authorization is pending for this connection.",
+      "authorizationPending": "The bank authorization hasn't completed yet. Finish the authorization at your bank and try again.",
+      "noActiveConnection": "No authorized bank connection yet. Please complete the TrueLayer authorization first.",
+      "consentNotActive": "The bank consent is no longer active. Please reconnect your bank account.",
+      "accountNotFound": "TrueLayer account not found.",
+      "accountNoExternalId": "Account has no external ID for TrueLayer sync.",
+      "transactionsRequestFailed": "TrueLayer could not fetch transactions from the bank right now. Please try again shortly.",
+      "transactionsRequestTimeout": "The bank took too long to return transactions. Please try syncing again shortly.",
+      "rateLimited": "TrueLayer is rate-limiting requests right now. Please try again shortly.",
+      "providerError": "TrueLayer or the bank is temporarily unavailable. Please try again shortly."
+    },
     "simplefin": {
       "invalidCredentialsFormat": "Invalid SimpleFIN credentials format.",
       "invalidSetupToken": "Invalid or already-used SimpleFIN setup token. Generate a new one from the SimpleFIN Bridge and try again.",

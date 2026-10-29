@@ -7,6 +7,7 @@ import { MonobankProvider } from './monobank';
 import { ensureMonobankQueueRecovery } from './monobank/transaction-sync-queue';
 import { bankProviderRegistry } from './registry';
 import { SimplefinProvider } from './simplefin/simplefin.provider';
+import { TrueLayerProvider } from './truelayer';
 import { WalutomatProvider } from './walutomat';
 
 /**
@@ -32,6 +33,9 @@ export function initializeBankProviders(): void {
 
     // Register Akahu (NZ open banking, personal apps) provider
     bankProviderRegistry.register(new AkahuProvider());
+
+    // Register TrueLayer (UK open banking, hosted authorization journeys) provider
+    bankProviderRegistry.register(new TrueLayerProvider());
 
     const registeredTypes = bankProviderRegistry.listTypes();
     logger.info(

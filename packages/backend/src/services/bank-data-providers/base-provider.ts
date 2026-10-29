@@ -6,6 +6,7 @@ import { ForbiddenError, ServiceUnavailableError } from '@js/errors';
 import { logger } from '@js/utils';
 import Accounts from '@models/accounts.model';
 import BankDataProviderConnections from '@models/bank-data-provider-connections.model';
+import { namespace } from '@models/connection';
 import { isBaseCurrencyChangeLocked } from '@services/currencies/base-currency-lock';
 
 import { SyncStatus, setAccountSyncStatus } from './sync/sync-status-tracker';
@@ -35,6 +36,62 @@ interface AuthTrackingMetadata {
  * to stop us hammering the upstream with bad credentials.
  */
 const AUTH_FAILURE_DEACTIVATION_THRESHOLD = 2;
+
+/** In-flight best-effort connection-metadata writes; see {@link drainConnectionMetadataWrites}. */
+const pendingConnectionMetadataWrites = new Set<Promise<unknown>>();
+
+/**
+ * Await all detached connection-metadata writes. The e2e suite drains these
+ * between tests so a bypassed write issued during the last test is already
+ * committed before the TRUNCATE runs.
+ */
+export async function drainConnectionMetadataWrites(): Promise<void> {
+  while (pendingConnectionMetadataWrites.size > 0) {
+    await Promise.allSettled([...pendingConnectionMetadataWrites]);
+  }
+}
+
+/**
+ * Commit a connection row OUTSIDE the ambient CLS sync transaction. An auth
+ * failure surfaces while a sync is being rolled back, so this write must
+ * commit independently or the failure count (and deactivation) would be undone
+ * by that rollback.
+ *
+ * When an ambient transaction IS open, the write is detached and MUST NOT be
+ * awaited: the bypassed UPDATE would queue behind any AccessExclusive writer
+ * (e.g. the e2e suite's per-test TRUNCATE) that is itself waiting for the
+ * ambient transaction — while the ambient transaction only ends when this
+ * write resolves. Postgres cannot see the cycle (the ambient transaction's
+ * backend is idle, parked in application code), so nothing aborts it and the
+ * whole call chain strands. Detaching breaks the cycle; the write lands when
+ * the locks clear, and these writes are best-effort by design.
+ *
+ * When no ambient transaction is open (HTTP request path, direct provider
+ * calls) awaiting is safe and preserves read-your-writes for callers, so the
+ * promise is returned for the caller to await.
+ */
+async function saveConnectionOutsideTransaction(
+  connection: BankDataProviderConnections,
+  providerName: string,
+): Promise<void> {
+  const write: Promise<unknown> = connection
+    .save({ transaction: null })
+    .catch((metaError) => {
+      logger.error({
+        message: `[${providerName}] Failed to update auth failure metadata:`,
+        error: metaError as Error,
+      });
+    })
+    .finally(() => {
+      pendingConnectionMetadataWrites.delete(write);
+    });
+
+  if (namespace.get('transaction')) {
+    pendingConnectionMetadataWrites.add(write);
+    return;
+  }
+  await write;
+}
 
 /**
  * Thrown from a provider's per-row persist loop to unwind an inline sync when a
@@ -115,6 +172,16 @@ export abstract class BaseBankDataProvider implements IBankDataProvider {
     return connection.getDecryptedCredentials();
   }
 
+  /**
+   * Commit a connection-metadata change outside the ambient sync transaction:
+   * awaited when no transaction is open (request-path determinism), detached
+   * when one is (see saveConnectionOutsideTransaction). Use this for any
+   * best-effort connection write that may run inside a sync.
+   */
+  protected async saveConnectionDetached(connection: BankDataProviderConnections): Promise<void> {
+    await saveConnectionOutsideTransaction(connection, this.metadata.name);
+  }
+
   // ============================================================================
   // Auth Failure Tracking
   // ============================================================================
@@ -158,11 +225,9 @@ export abstract class BaseBankDataProvider implements IBankDataProvider {
       }
 
       connection.metadata = metadata as any;
-      // `{ transaction: null }` bypasses the ambient CLS transaction: an auth
-      // failure surfaces while a sync is being rolled back, so this write must
-      // commit independently or the failure count (and deactivation) would be
-      // undone by that rollback.
-      await connection.save({ transaction: null });
+      // See saveConnectionOutsideTransaction: bypasses the ambient sync
+      // transaction and is deliberately never awaited.
+      await saveConnectionOutsideTransaction(connection, this.metadata.name);
     } catch (metaError) {
       logger.error({
         message: `[${this.metadata.name}] Failed to update auth failure metadata:`,
@@ -186,7 +251,7 @@ export abstract class BaseBankDataProvider implements IBankDataProvider {
         metadata.consecutiveAuthFailures = 0;
         connection.metadata = metadata as any;
         // Commit outside any ambient sync transaction (see handleAuthError).
-        await connection.save({ transaction: null });
+        await saveConnectionOutsideTransaction(connection, this.metadata.name);
       }
     } catch {
       // Non-critical, ignore

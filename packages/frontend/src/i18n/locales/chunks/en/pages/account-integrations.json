@@ -31,6 +31,10 @@
         "akahu": {
           "name": "Akahu",
           "description": "Sync transactions from New Zealand banks for free via an Akahu personal app"
+        },
+        "trueLayer": {
+          "name": "TrueLayer",
+          "description": "Most UK banks (HSBC, Barclays, Monzo, Lloyds and more) via open banking"
         }
       },
       "monobank": {
@@ -303,7 +307,7 @@
         "userTokenHint": "Shown on your personal app page at my.akahu.nz",
         "appTokenLabel": "App ID Token",
         "appTokenPlaceholder": "Enter your Akahu App ID Token",
-        "appTokenHint": "Also shown on the same page (sent as the X-Akahu-Id header)",
+        "appTokenHint": "Also shown on the same page",
         "help": {
           "trigger": "Where do I find my Akahu tokens?",
           "title": "Get your Akahu personal app tokens",
@@ -324,6 +328,38 @@
         "errors": {
           "connectFailed": "Failed to connect to Akahu",
           "importFailed": "Failed to import accounts"
+        }
+      },
+      "trueLayerConnector": {
+        "clientIdLabel": "Client ID",
+        "clientIdPlaceholder": "Enter your TrueLayer Client ID",
+        "clientIdHint": "Shown on your application page at console.truelayer.com",
+        "clientSecretLabel": "Client Secret",
+        "clientSecretPlaceholder": "Enter your TrueLayer Client Secret",
+        "clientSecretHint": "Generated for your application (stored encrypted)",
+        "environmentLabel": "Environment",
+        "environmentProduction": "Production",
+        "environmentSandbox": "Sandbox",
+        "environmentHint": "Sandbox apps sync simulated data — use Production to connect your real banks",
+        "backButton": "Back",
+        "connectingButton": "Connecting...",
+        "connectButton": "Connect",
+        "continueTitle": "Continue to TrueLayer",
+        "continueDescription": "You'll be redirected to TrueLayer to pick your bank and approve the connection. After consenting, you'll return here automatically.",
+        "continueButton": "Continue to TrueLayer",
+        "errors": {
+          "connectFailed": "Failed to connect to TrueLayer",
+          "noAuthUrl": "TrueLayer did not return an authorization URL — check your credentials and try again"
+        },
+        "help": {
+          "trigger": "Where do I get my TrueLayer credentials?",
+          "title": "Set up your TrueLayer application",
+          "step1": "Create a TrueLayer application at {link}, enable the Data product, then copy its Client ID and Client Secret.",
+          "step2": "Add MoneyMatter's callback URL to your application's allowed redirect URIs:",
+          "step3": "After clicking Connect you'll be redirected to TrueLayer's authorization page — pick your bank (HSBC, Barclays, Monzo, Lloyds and more), approve the consent, and you'll return here automatically."
+        },
+        "footer": {
+          "openConsole": "Open console.truelayer.com"
         }
       },
       "notifications": {
@@ -483,7 +519,8 @@
         "lunchflow": "Just connect your banks on the LunchFlow side, then create and paste your LunchFlow API key",
         "simplefin": "SimpleFIN Bridge is a paid service. You create a bridge account, link your bank, and paste a setup token — no developer setup required.",
         "walutomat": "Requires generating an RSA key pair and uploading the public key to Walutomat dashboard",
-        "akahu": "Free for your own accounts: create an Akahu personal app at my.akahu.nz, connect your NZ banks there, then paste the two tokens"
+        "akahu": "Free for your own accounts: create an Akahu personal app at my.akahu.nz, connect your NZ banks there, then paste the two tokens",
+        "trueLayer": "Create a TrueLayer application at console.truelayer.com, paste its Client ID and Secret, and register MoneyMatter's callback URL — paid once your app goes live, free in sandbox"
       }
     },
     "connectionName": {
