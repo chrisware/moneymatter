@@ -5,6 +5,7 @@ import {
   type BaseCurrencyBlocker,
   type BaseCurrencyChangeStep,
   FIRE_AMOUNT_KEYS,
+  type FireSettings,
   type RecalculateResult,
   RESOURCE_TYPES,
 } from '@bt/shared/types';
@@ -60,7 +61,7 @@ import { Op, QueryTypes, Transaction as SequelizeTransaction } from 'sequelize';
  * 6. PortfolioTransfers
  * PortfolioTransfers.refAmount
  * 7. UserSettings
- * settings.fire amount overrides
+ * settings.fire and settings.fireHistory amount overrides
  *
  * TODO: Remaining performance optimizations:
  * 1. N+1 Query Problem - Exchange Rate Fetching.
@@ -876,6 +877,9 @@ async function recalculatePortfolioBalances(params: {
   return portfolioBalances.length;
 }
 
+const hasFireAmounts = ({ fire }: { fire: FireSettings | undefined }) =>
+  FIRE_AMOUNT_KEYS.some((key) => fire?.[key] != null);
+
 async function convertFireSettingsAmounts({
   userId,
   oldCurrencyCode,
@@ -888,8 +892,9 @@ async function convertFireSettingsAmounts({
   transaction: SequelizeTransaction;
 }): Promise<void> {
   const userSettings = await UserSettings.findOne({ where: { userId }, lock: true, transaction });
-  const fire = userSettings?.settings.fire;
-  if (!userSettings || !fire || FIRE_AMOUNT_KEYS.every((key) => fire[key] == null)) return;
+  if (!userSettings) return;
+  const { fire, fireHistory } = userSettings.settings;
+  if (!hasFireAmounts({ fire }) && !fireHistory?.some((entry) => hasFireAmounts({ fire: entry.fire }))) return;
 
   const { rate } = await userExchangeRateService.getExchangeRate({
     userId,
@@ -897,14 +902,21 @@ async function convertFireSettingsAmounts({
     quoteCode: newCurrencyCode,
     date: new Date(),
   });
-  const converted = { ...fire };
-  for (const key of FIRE_AMOUNT_KEYS) {
-    const value = fire[key];
-    if (value == null) continue;
-    converted[key] = calculateRefAmountFromParams({ amount: Money.fromDecimal(value), rate }).toNumber();
-  }
+  const convert = ({ fire: settings }: { fire: FireSettings }): FireSettings => {
+    const converted = { ...settings };
+    for (const key of FIRE_AMOUNT_KEYS) {
+      const value = settings[key];
+      if (value == null) continue;
+      converted[key] = calculateRefAmountFromParams({ amount: Money.fromDecimal(value), rate }).toNumber();
+    }
+    return converted;
+  };
 
-  userSettings.settings = { ...userSettings.settings, fire: converted };
+  userSettings.settings = {
+    ...userSettings.settings,
+    fire: fire && convert({ fire }),
+    fireHistory: fireHistory?.map((entry) => ({ ...entry, fire: convert({ fire: entry.fire }) })),
+  };
   await userSettings.save({ transaction });
 }
 

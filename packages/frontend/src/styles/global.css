@@ -78,6 +78,7 @@
   --color-card-tooltip-muted: var(--card-tooltip-muted);
   --color-card-tooltip-border: var(--card-tooltip-border);
   --shadow-card-tooltip: var(--card-tooltip-shadow);
+  --shadow-card: var(--card-shadow);
 
   --color-input-background: var(--input-background);
 
@@ -260,13 +261,14 @@
       'Segoe UI Symbol', 'Noto Color Emoji';
     --header-height: 69px;
 
-    --background: rgb(247, 246, 244);
+    --background: rgb(243, 241, 237);
     --foreground: rgb(32, 28, 22);
 
     --base-text: rgb(32, 28, 22);
 
     --card: rgb(255, 255, 255);
     --card-foreground: rgb(32, 28, 22);
+    --card-shadow: 0 1px 2px rgb(32 28 22 / 0.05), 0 6px 20px rgb(32 28 22 / 0.06);
 
     --dialog: rgb(255, 255, 255);
 
@@ -286,33 +288,33 @@
 
     --primary: rgb(115, 85, 190);
     --primary-foreground: rgb(255, 255, 255);
-    --primary-text: rgb(115, 85, 190);
+    --primary-text: rgb(106, 75, 181);
 
-    --secondary: rgb(229, 231, 223);
+    --secondary: rgb(239, 237, 233);
     --secondary-foreground: rgb(32, 28, 22);
-    --secondary-hover: rgb(212, 215, 202);
-    --secondary-border: rgb(203, 208, 192);
+    --secondary-hover: rgb(230, 227, 221);
+    --secondary-border: rgb(220, 215, 206);
 
-    --muted: rgb(244, 238, 226);
+    --muted: rgb(242, 240, 236);
     --muted-foreground: rgb(118, 107, 91);
 
-    --accent: rgb(244, 244, 236);
+    --accent: rgb(234, 231, 225);
     --accent-foreground: rgb(32, 28, 22);
 
     --destructive: rgb(217, 90, 58);
     --destructive-foreground: rgb(249, 249, 249);
     --destructive-text: rgb(172, 60, 38);
 
-    --border: rgb(232, 223, 205);
+    --border: rgb(234, 229, 220);
     --input: rgb(30 25 18 / 0.16);
     --ring: rgba(115, 85, 190, 0.6);
     --radius: 0.75rem;
 
     --success: rgb(42, 141, 82);
     --success-foreground: rgb(38, 32, 24);
-    --success-text: rgb(42, 141, 82);
+    --success-text: rgb(38, 116, 71);
 
-    --warning-text: rgb(196, 120, 35);
+    --warning-text: rgb(154, 91, 18);
 
     /* Darkens whatever transaction-type color bar sits under the planned stripe overlay. */
     --planned-stripe: rgba(0, 0, 0, 0.35);
@@ -321,9 +323,9 @@
     --error-message: rgb(201, 75, 54);
 
     /* Amount colors — more muted, sophisticated tones for light theme */
-    --app-income-color: rgb(42, 141, 82);
-    --app-expense-color: rgb(217, 84, 62);
-    --app-transfer-color: rgb(128, 135, 138);
+    --app-income-color: rgb(38, 116, 71);
+    --app-expense-color: rgb(194, 65, 41);
+    --app-transfer-color: rgb(106, 113, 116);
     --app-savings-color: rgb(37, 99, 235);
 
     /* Accent for the "When" half of automation rules; "Then" uses --primary. */
@@ -380,6 +382,7 @@
 
     --card: rgb(27, 25, 23);
     --card-foreground: rgb(245, 243, 240);
+    --card-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
 
     /* A subtle step above --background; input fields inside dialogs read through their border, not surface contrast. */
     --dialog: rgb(20, 18, 17);
@@ -490,7 +493,18 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground font-sans antialiased;
+    @apply bg-background text-foreground font-sans;
+  }
+  /* Grayscale smoothing thins dark-on-light text on macOS; only light-on-dark benefits. */
+  .dark body {
+    @apply antialiased;
+  }
+}
+
+/* Hand-rolled top-level card containers; inner tiles use smaller radii and stay flat. */
+@layer components {
+  :root:not(.dark) .bg-card.border:is(.rounded-xl, .rounded-2xl) {
+    box-shadow: var(--card-shadow);
   }
 }
 

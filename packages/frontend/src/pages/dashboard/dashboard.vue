@@ -13,7 +13,9 @@
           isEditMode && 'max-md:hidden',
           'max-md:right-0 max-md:left-0',
           'sticky max-md:-bottom-px max-md:-mb-8 md:top-(--header-height)',
-          'md:order-first md:mx-0 md:-mt-1 md:mb-2 md:border-t-0 md:py-1',
+          'md:order-first md:-mx-6 md:-mt-1 md:mb-2 md:border-t-0 md:px-6 md:py-1',
+          isScrolled &&
+            'md:bg-card/95 md:supports-backdrop-filter:bg-card/95 dark:md:bg-background/95 dark:md:supports-backdrop-filter:bg-background/80 md:border-b dark:md:border-b-0',
         ])
       "
     >
@@ -59,11 +61,14 @@
 <script lang="ts" setup>
 import RecoveryMethodBanner from '@/components/banners/recovery-method-banner.vue';
 import PageWrapper from '@/components/common/page-wrapper.vue';
+import { SCROLL_AREA_IDS } from '@/components/lib/ui/scroll-area/types';
 import DashboardOnboarding from '@/components/widgets/dashboard-onboarding.vue';
 import { useUserSettings } from '@/composable/data-queries/user-settings';
+import { useScrollAreaContainer } from '@/composable/scroll-area-container';
 import { getPayPeriod } from '@/composable/use-period-navigation';
 import { cn } from '@/lib/utils';
 import { useAccountsStore } from '@/stores';
+import { useScroll } from '@vueuse/core';
 import { isSameDay, parseISO } from 'date-fns';
 import { storeToRefs } from 'pinia';
 import { computed, ref, watch } from 'vue';
@@ -86,6 +91,10 @@ defineOptions({
 
 const gridRef = ref<InstanceType<typeof DashboardGrid> | null>(null);
 const isEditMode = computed(() => gridRef.value?.isEditMode ?? false);
+
+const scrollContainer = useScrollAreaContainer(SCROLL_AREA_IDS.dashboard);
+const { y: scrollY } = useScroll(() => scrollContainer.value?.viewportElement ?? null);
+const isScrolled = computed(() => scrollY.value > 0);
 
 const { data: userSettings } = useUserSettings();
 const payday = computed(() => userSettings.value?.payday ?? 1);

@@ -216,13 +216,16 @@ export async function getPortfolioSummaries<R extends boolean | undefined = fals
 }
 
 export async function getPortfoliosAnnualizedReturns<R extends boolean | undefined = false>({
+  asOf,
   raw,
 }: {
+  asOf?: string;
   raw?: R;
 } = {}) {
   return makeRequest<Awaited<ReturnType<typeof _getPortfoliosAnnualizedReturns>>, R>({
     method: 'get',
     url: '/investments/portfolios/annualized-returns',
+    payload: asOf === undefined ? undefined : { asOf },
     raw,
   });
 }

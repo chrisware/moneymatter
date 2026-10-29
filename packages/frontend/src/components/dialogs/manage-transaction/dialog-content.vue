@@ -1721,13 +1721,13 @@ onUnmounted(() => {
           v-for="chip in addFieldChips"
           :key="chip.key"
           type="button"
-          variant="ghost"
+          variant="outline"
           size="sm"
-          class="text-muted-foreground hover:text-foreground h-8 gap-1.5 border border-dashed px-2.5 text-sm"
+          class="h-8 gap-1.5 rounded-full px-3 text-sm"
           :disabled="isFormFieldsDisabled"
           @click="chip.onClick"
         >
-          <component :is="chip.icon" class="size-3.5" />
+          <component :is="chip.icon" class="text-muted-foreground size-3.5" />
           {{ $t(chip.labelKey) }}
         </Button>
       </div>
@@ -2115,7 +2115,10 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <div v-if="!isMobileView" class="bg-muted border-border border-l px-6 py-6 dark:bg-black/20">
+        <div
+          v-if="!isMobileView"
+          class="bg-muted border-border border-l px-6 py-6 [--color-input-background:var(--card)] dark:bg-black/20 dark:[--color-input-background:var(--input-background)]"
+        >
           <ReuseMoreOptions />
         </div>
       </div>

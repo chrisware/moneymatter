@@ -30,6 +30,8 @@ RUN npm run build
 # 🚀 Stage 2️⃣: Production
 FROM node:24.22.1-alpine AS production
 
+LABEL org.opencontainers.image.source="https://github.com/letehaha/moneymatter"
+
 WORKDIR /app
 
 # Install build dependencies for native modules (node-gyp)

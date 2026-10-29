@@ -66,6 +66,8 @@ RUN NODE_OPTIONS="--max-old-space-size=$NODE_BUILD_HEAP_MB" npm run build
 # 🚀 Stage 2️⃣: Production
 FROM nginx:1.27-alpine AS production-stage
 
+LABEL org.opencontainers.image.source="https://github.com/letehaha/moneymatter"
+
 # The Sentry release is the only baked runtime fallback: it must match the
 # source maps CI uploaded while building this exact image, so it ships inside
 # the image instead of being supplied per deployment. Everything else the

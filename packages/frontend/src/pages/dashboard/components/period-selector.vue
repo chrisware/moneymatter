@@ -11,7 +11,7 @@
       popover-class-name="md:min-w-[600px]"
     >
       <template #trigger="{ triggerText }">
-        <Button variant="ghost" size="sm" class="hover:bg-accent min-w-48 font-medium">
+        <Button variant="ghost" size="sm" class="min-w-48 font-medium">
           <CalendarIcon class="mr-1.5 size-3.5" />
           {{ triggerText }}
         </Button>

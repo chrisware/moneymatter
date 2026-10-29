@@ -38,7 +38,7 @@ const currentValue = computed(() => (metrics.value ? Number(metrics.value.curren
           v-else-if="currentValue !== null"
           :content="formatAmountByCurrencyCode(currentValue, deal.currencyCode)"
         >
-          <span class="text-amount text-muted-foreground shrink-0 text-sm">
+          <span class="text-amount shrink-0 text-sm font-medium">
             {{ formatCompactAmount(currentValue, deal.currencyCode) }}
           </span>
         </DesktopOnlyTooltip>

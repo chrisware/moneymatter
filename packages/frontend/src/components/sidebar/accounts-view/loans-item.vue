@@ -33,10 +33,7 @@ const loanIcon = computed(() => getLoanTypeIcon({ loanType: props.loan.loanDetai
           <span class="truncate text-sm">{{ loan.name }}</span>
         </div>
         <DesktopOnlyTooltip :content="formatAmountByCurrencyCode(balance, loan.currencyCode)">
-          <span
-            class="text-amount shrink-0 text-sm"
-            :class="balance >= 0 ? 'text-muted-foreground' : 'text-destructive-text'"
-          >
+          <span class="text-amount shrink-0 text-sm font-medium" :class="balance < 0 && 'text-destructive-text'">
             {{ formatCompactAmount(balance, loan.currencyCode) }}
           </span>
         </DesktopOnlyTooltip>

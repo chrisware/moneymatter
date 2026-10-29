@@ -291,6 +291,13 @@
         "lean": "Lean FIRE",
         "regular": "FIRE",
         "fat": "Fat FIRE"
+      },
+      "pace": {
+        "ahead": "Випереджаєте на {duration}",
+        "behind": "Відстаєте на {duration}",
+        "onPace": "За графіком",
+        "backInReach": "Знову досяжно",
+        "offTrack": "Поза графіком"
       }
     }
   },
@@ -545,6 +552,12 @@
       "removeTransactionDescriptionNormal": "Ви впевнені, що хочете видалити цю транзакцію з групи?",
       "removeButtonText": "Видалити",
       "removeAndDeleteButtonText": "Видалити й видалити групу",
+      "removeFromGroup": "Видалити з групи",
+      "saveError": "Не вдалося зберегти групу",
+      "removeError": "Не вдалося видалити транзакцію з групи",
+      "manageTransactions": "Керувати",
+      "showMoreNote": "Показати більше",
+      "showLessNote": "Показати менше",
       "summary": {
         "transactions": "Транзакції",
         "net": "Сальдо",

@@ -108,7 +108,11 @@ async function upsertUserSettings({
   // are stripped here too, so a hand-edited archive can't bring ciphertext in.
   const settings = stripConnectionKeys({ settings: unifyAiConnections({ settings: src.settings }) });
   const parsed = ZodSettingsSchema.safeParse(settings);
-  const restored = parsed.success ? parsed : ZodSettingsSchema.omit({ fire: true }).safeParse(settings);
+  // Old history snapshots can fail a later-tightened limit; that drops the history alone, not a valid `fire`.
+  const withoutHistory = parsed.success ? parsed : ZodSettingsSchema.omit({ fireHistory: true }).safeParse(settings);
+  const restored = withoutHistory.success
+    ? withoutHistory
+    : ZodSettingsSchema.omit({ fire: true, fireHistory: true }).safeParse(settings);
   if (!restored.success) {
     logger.warn('Backup restore: settings failed schema and were reset', { userId, issues: restored.error.issues });
     // A backup taken across a settings-schema change can carry a blob the current
@@ -131,6 +135,7 @@ async function upsertUserSettings({
   remapSavedPivotViewIds({ views: restoredSettings.savedPivotViews, insertedIds });
   remapSavedTransactionViewIds({ views: restoredSettings.savedTransactionViews, insertedIds });
   remapFireSettingsIds({ fire: restoredSettings.fire, insertedIds });
+  for (const entry of restoredSettings.fireHistory ?? []) remapFireSettingsIds({ fire: entry.fire, insertedIds });
   remapIncomeCategoryIds({ settings: restoredSettings, insertedIds });
   remapCategoryOrderIds({ settings: restoredSettings, insertedIds });
 

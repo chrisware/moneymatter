@@ -184,7 +184,7 @@ function handlePayeeCreated(payee: PayeeModel) {
           :disabled="disabled"
           :class="
             cn(
-              'border-input bg-input-background ring-offset-background flex h-10 w-full items-center gap-2 rounded-md border px-3 py-2 text-sm md:h-9',
+              'border-input bg-input-background not-dark:hover:bg-accent ring-offset-background flex h-10 w-full items-center gap-2 rounded-md border px-3 py-2 text-sm md:h-9',
               'focus-visible:ring-ring focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-hidden',
               disabled && 'cursor-not-allowed opacity-50',
             )
