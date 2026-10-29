@@ -16,6 +16,7 @@ import updateConnectionDetails from '@controllers/bank-data-providers/connection
 import listBanks from '@controllers/bank-data-providers/enablebanking/list-banks';
 import listCountries from '@controllers/bank-data-providers/enablebanking/list-countries';
 import oauthCallback from '@controllers/bank-data-providers/enablebanking/oauth-callback';
+import trueLayerOAuthCallback from '@controllers/bank-data-providers/truelayer/oauth-callback';
 import * as providersController from '@controllers/bank-data-providers/providers.controller';
 import checkSync from '@controllers/bank-data-providers/sync/check-sync';
 import getSyncStatus from '@controllers/bank-data-providers/sync/get-sync-status';
@@ -155,6 +156,16 @@ router.post(
   checkBaseCurrencyLock,
   attachPsuContext,
   oauthCallback,
+);
+
+// TrueLayer specific endpoints
+router.post(
+  '/truelayer/oauth-callback',
+  requireFeature(FEATURES.bank_providers),
+  blockDemoUsers,
+  checkBaseCurrencyLock,
+  attachPsuContext,
+  trueLayerOAuthCallback,
 );
 
 export default router;

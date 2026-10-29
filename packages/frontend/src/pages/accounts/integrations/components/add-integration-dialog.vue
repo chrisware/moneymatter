@@ -128,6 +128,11 @@
           @connected="handleProviderConnected"
           @cancel="handleCancel"
         />
+        <TrueLayerConnector
+          v-else-if="selectedProviderType === BANK_PROVIDER_TYPE.TRUELAYER"
+          @connected="handleProviderConnected"
+          @cancel="handleCancel"
+        />
       </template>
     </PlanRestricted>
   </ResponsiveDialog>
@@ -161,6 +166,7 @@ import EnableBankingConnector from './enable-banking-connector.vue';
 import LunchFlowConnector from './lunchflow-connector.vue';
 import MonobankConnector from './monobank-connector.vue';
 import SimplefinConnector from './simplefin-connector.vue';
+import TrueLayerConnector from './truelayer-connector.vue';
 import WalutomatConnector from './walutomat-connector.vue';
 
 const { t } = useI18n();

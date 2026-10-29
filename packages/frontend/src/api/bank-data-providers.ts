@@ -310,6 +310,15 @@ export const completeEnableBankingOAuth = async (
   return response;
 };
 
+export const completeTrueLayerAuthorization = async (
+  connectionId: string,
+): Promise<{ success: boolean; message: string }> => {
+  const response = await api.post('/bank-data-providers/truelayer/oauth-callback', {
+    connectionId,
+  });
+  return response;
+};
+
 // Bulk account sync APIs
 export enum SyncStatus {
   IDLE = 'idle',

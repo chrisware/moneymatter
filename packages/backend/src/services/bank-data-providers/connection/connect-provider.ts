@@ -7,6 +7,7 @@ import { withTransaction } from '@root/services/common/with-transaction';
 import { EnableBankingProvider } from '../enablebanking';
 import { isProviderAvailableForUser } from '../provider-availability';
 import { bankProviderRegistry } from '../registry';
+import { TrueLayerProvider } from '../truelayer';
 
 export const connectProvider = withTransaction(
   async ({
@@ -34,11 +35,15 @@ export const connectProvider = withTransaction(
       await BankDataProviderConnections.update({ providerName: providerName }, { where: { id: connectionId } });
     }
 
-    // For Enable Banking, get the authorization URL
+    // For OAuth-redirect providers (Enable Banking, TrueLayer), get the
+    // authorization URL the frontend must send the user to.
     let authUrl: string | undefined;
     if (providerType === BANK_PROVIDER_TYPE.ENABLE_BANKING) {
       const enableBankingProvider = provider as EnableBankingProvider;
       authUrl = await enableBankingProvider.getAuthorizationUrl(connectionId);
+    } else if (providerType === BANK_PROVIDER_TYPE.TRUELAYER) {
+      const trueLayerProvider = provider as TrueLayerProvider;
+      authUrl = await trueLayerProvider.getAuthorizationUrl(connectionId);
     }
 
     return {

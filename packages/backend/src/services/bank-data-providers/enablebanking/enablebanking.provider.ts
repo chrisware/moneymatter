@@ -1477,9 +1477,9 @@ export class EnableBankingProvider extends BaseBankDataProvider {
           deactivationReason: DEACTIVATION_REASON.AUTH_FAILURE,
         };
         connection.metadata = updatedMetadata as unknown as object;
-        // { transaction: null } bypasses the current CLS transaction so this write
-        // is committed immediately even if an outer transaction rolls back.
-        await connection.save({ transaction: null });
+        // Detached + tx-bypassed so the write survives a sync rollback yet can
+        // never strand behind a queued AccessExclusive lock (see base class).
+        await this.saveConnectionDetached(connection);
 
         logger.info(`Connection ${connectionId} marked as expired due to 403 session error`);
       } catch (updateError) {

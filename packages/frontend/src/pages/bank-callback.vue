@@ -45,13 +45,15 @@
 </template>
 
 <script lang="ts" setup>
-import { completeEnableBankingOAuth } from '@/api/bank-data-providers';
+import { completeEnableBankingOAuth, completeTrueLayerAuthorization } from '@/api/bank-data-providers';
 import { VUE_QUERY_GLOBAL_PREFIXES } from '@/common/const';
 import DocsLink from '@/components/common/docs-link.vue';
 import { useNotificationCenter } from '@/components/notification-center';
 import { useSyncStatus } from '@/composable/use-sync-status';
+import { isApiErrorWithCode } from '@/js/errors';
 import { ROUTES_NAMES } from '@/routes/constants';
 import { useAccountsStore } from '@/stores/accounts';
+import { API_ERROR_CODES } from '@bt/shared/types';
 import { useQueryClient } from '@tanstack/vue-query';
 import { CheckCircle2Icon, InfoIcon } from '@lucide/vue';
 import { onMounted, ref } from 'vue';
@@ -70,6 +72,59 @@ const isProcessing = ref(true);
 const error = ref('');
 const success = ref(false);
 
+// localStorage keys set by the connectors right before redirecting to the bank.
+const EB_KEY = 'pendi…nId';
+const TL_KEY = 'pendi…nId';
+
+/**
+ * TrueLayer completes the consent at the bank just before redirecting back;
+ * the Connection-Id may serve data a beat later, so retry the confirmation a
+ * few times while the backend answers 503 (consent not active yet).
+ */
+const confirmTrueLayer = async (connectionId: string): Promise<void> => {
+  const attempts = 4;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      await completeTrueLayerAuthorization(connectionId);
+      return;
+    } catch (err) {
+      const stillPending = isApiErrorWithCode(err, API_ERROR_CODES.serviceUnavailable) && attempt < attempts - 1;
+      if (!stillPending) throw err;
+
+      const { promise, resolve } = Promise.withResolvers<void>();
+      setTimeout(resolve, 1500);
+      await promise;
+    }
+  }
+};
+
+/** Shared success path: refresh global state so badges/banners update live. */
+const finalize = async (connectionId: string) => {
+  // A reconnect queues a sync server-side, so watch it; triggering one here would double-sync.
+  const refreshResults = await Promise.allSettled([
+    syncStatus.watchSync(),
+    queryClient.invalidateQueries({
+      predicate: (query) => (query.queryKey as string[]).includes(VUE_QUERY_GLOBAL_PREFIXES.bankConnectionChange),
+    }),
+    accountsStore.refetchAccounts(),
+  ]);
+  for (const result of refreshResults) {
+    if (result.status === 'rejected') {
+      console.error('Post-OAuth cache refresh failed:', result.reason);
+    }
+  }
+
+  success.value = true;
+  addSuccessNotification(t('pages.integrations.notifications.connectionEstablished'));
+
+  setTimeout(() => {
+    router.push({
+      name: ROUTES_NAMES.accountIntegrationDetails,
+      params: { connectionId },
+    });
+  }, 2000);
+};
+
 onMounted(async () => {
   // Get query parameters from URL
   const code = route.query.code as string;
@@ -85,60 +140,46 @@ onMounted(async () => {
     return;
   }
 
-  // Validate required parameters
-  if (!code || !state) {
-    error.value = t('pages.bankCallback.errors.missingParameters');
-    isProcessing.value = false;
-    addErrorNotification(error.value);
-    return;
-  }
-
-  // Get connection ID from localStorage (set by EnableBankingConnector)
-  const connectionId = localStorage.getItem('pendingEnableBankingConnectionId');
-
-  if (!connectionId) {
-    error.value = t('pages.bankCallback.errors.connectionIdNotFound');
-    isProcessing.value = false;
-    addErrorNotification(error.value);
-    return;
-  }
-
   try {
+    // TrueLayer: no code/state to exchange — the pending Connection-Id stored
+    // before the redirect is the whole correlation. Checked first so its
+    // return (which may carry stray query params) is never misread as EB.
+    const truelayerConnectionId = localStorage.getItem(TL_KEY);
+    if (truelayerConnectionId) {
+      await confirmTrueLayer(truelayerConnectionId);
+      localStorage.removeItem(TL_KEY);
+      await finalize(truelayerConnectionId);
+      return;
+    }
+
+    // Enable Banking: authorization-code exchange.
+    if (!code || !state) {
+      error.value = t('pages.bankCallback.errors.missingParameters');
+      isProcessing.value = false;
+      addErrorNotification(error.value);
+      return;
+    }
+
+    // Get connection ID from localStorage (set by EnableBankingConnector)
+    const connectionId = localStorage.getItem(EB_KEY);
+
+    if (!connectionId) {
+      error.value = t('pages.bankCallback.errors.connectionIdNotFound');
+      isProcessing.value = false;
+      addErrorNotification(error.value);
+      return;
+    }
+
     // Complete OAuth flow
     await completeEnableBankingOAuth(connectionId, code, state);
 
     // Clear stored connection ID
-    localStorage.removeItem('pendingEnableBankingConnectionId');
+    localStorage.removeItem(EB_KEY);
 
-    // Refresh global UI state so the sidebar's "needs reauth" triangle, the
-    // account details banner, and the connection details view all reflect the
-    // newly-reactivated connection without requiring a manual page reload.
     // Use Promise.allSettled so a cache-refresh failure doesn't override the
     // success state and bounce the user back to the "OAuth failed" screen —
     // the server-side reconnect already succeeded by this point.
-    const refreshResults = await Promise.allSettled([
-      // A reconnect queues a sync server-side, so watch it; triggering one here would double-sync.
-      syncStatus.watchSync(),
-      queryClient.invalidateQueries({
-        predicate: (query) => (query.queryKey as string[]).includes(VUE_QUERY_GLOBAL_PREFIXES.bankConnectionChange),
-      }),
-      accountsStore.refetchAccounts(),
-    ]);
-    for (const result of refreshResults) {
-      if (result.status === 'rejected') {
-        console.error('Post-OAuth cache refresh failed:', result.reason);
-      }
-    }
-
-    success.value = true;
-    addSuccessNotification(t('pages.integrations.notifications.connectionEstablished'));
-
-    setTimeout(() => {
-      router.push({
-        name: ROUTES_NAMES.accountIntegrationDetails,
-        params: { connectionId },
-      });
-    }, 2000);
+    await finalize(connectionId);
   } catch (err) {
     const message = err instanceof Error ? err.message : t('pages.bankCallback.errors.failedToComplete');
     error.value = message;

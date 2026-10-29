@@ -11,6 +11,7 @@ export enum ACCOUNT_TYPES {
   walutomat = 'walutomat', // walutomat provider connection
   simplefin = 'simplefin', // SimpleFIN Bridge provider connection
   akahu = 'akahu', // Akahu (NZ open banking) provider connection
+  truelayer = 'truelayer', // TrueLayer (UK open banking) provider connection
 }
 
 /**
@@ -23,6 +24,7 @@ export enum BANK_PROVIDER_TYPE {
   WALUTOMAT = 'walutomat',
   SIMPLEFIN = 'simplefin',
   AKAHU = 'akahu',
+  TRUELAYER = 'truelayer',
 }
 
 /**

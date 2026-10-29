@@ -268,16 +268,20 @@
           <div class="space-y-4">
             <InputField
               v-model="newApiKey"
-              type="password"
+              :type="connectionDetails.providerType === BANK_PROVIDER_TYPE.TRUELAYER ? 'text' : 'password'"
               :label="
                 connectionDetails.providerType === BANK_PROVIDER_TYPE.AKAHU
                   ? $t('pages.integrations.akahu.userTokenLabel')
-                  : $t('pages.integrations.updateCredentials.apiKeyLabel')
+                  : connectionDetails.providerType === BANK_PROVIDER_TYPE.TRUELAYER
+                    ? $t('pages.integrations.trueLayerConnector.clientIdLabel')
+                    : $t('pages.integrations.updateCredentials.apiKeyLabel')
               "
               :placeholder="
                 connectionDetails.providerType === BANK_PROVIDER_TYPE.AKAHU
                   ? $t('pages.integrations.akahu.userTokenPlaceholder')
-                  : $t('pages.integrations.updateCredentials.apiKeyPlaceholder')
+                  : connectionDetails.providerType === BANK_PROVIDER_TYPE.TRUELAYER
+                    ? $t('pages.integrations.trueLayerConnector.clientIdPlaceholder')
+                    : $t('pages.integrations.updateCredentials.apiKeyPlaceholder')
               "
             />
             <TextareaField
@@ -288,11 +292,22 @@
               :placeholder="$t('pages.integrations.walutomat.privateKeyPlaceholder')"
             />
             <InputField
-              v-else-if="connectionDetails.providerType === BANK_PROVIDER_TYPE.AKAHU"
+              v-else-if="
+                connectionDetails.providerType === BANK_PROVIDER_TYPE.AKAHU ||
+                connectionDetails.providerType === BANK_PROVIDER_TYPE.TRUELAYER
+              "
               v-model="newPrivateKey"
               type="password"
-              :label="$t('pages.integrations.akahu.appTokenLabel')"
-              :placeholder="$t('pages.integrations.akahu.appTokenPlaceholder')"
+              :label="
+                connectionDetails.providerType === BANK_PROVIDER_TYPE.AKAHU
+                  ? $t('pages.integrations.akahu.appTokenLabel')
+                  : $t('pages.integrations.trueLayerConnector.clientSecretLabel')
+              "
+              :placeholder="
+                connectionDetails.providerType === BANK_PROVIDER_TYPE.AKAHU
+                  ? $t('pages.integrations.akahu.appTokenPlaceholder')
+                  : $t('pages.integrations.trueLayerConnector.clientSecretPlaceholder')
+              "
             />
           </div>
           <DialogFooter class="mt-6 grid gap-3 sm:grid-cols-2">
@@ -557,7 +572,8 @@ const canUpdateCredentials = computed(() => {
   if (!newApiKey.value.trim()) return false;
   if (
     connectionDetails.value?.providerType === BANK_PROVIDER_TYPE.WALUTOMAT ||
-    connectionDetails.value?.providerType === BANK_PROVIDER_TYPE.AKAHU
+    connectionDetails.value?.providerType === BANK_PROVIDER_TYPE.AKAHU ||
+    connectionDetails.value?.providerType === BANK_PROVIDER_TYPE.TRUELAYER
   ) {
     return !!newPrivateKey.value.trim();
   }
@@ -793,8 +809,13 @@ const handleReconnect = async () => {
     // Call reauthorization API
     const response = await reauthorizeConnection(connectionId.value);
 
-    // Store connection ID for OAuth callback
-    localStorage.setItem('pendingEnableBankingConnectionId', String(connectionId.value));
+    // Store connection ID for the OAuth callback page, keyed by provider so
+    // /bank-callback can tell whose journey just returned.
+    const pendingKey =
+      connectionDetails.value?.providerType === BANK_PROVIDER_TYPE.TRUELAYER
+        ? 'pendingTrueLayerConnectionId'
+        : 'pendingEnableBankingConnectionId';
+    localStorage.setItem(pendingKey, String(connectionId.value));
 
     // Redirect to the authorization URL
     window.location.href = response.authUrl;

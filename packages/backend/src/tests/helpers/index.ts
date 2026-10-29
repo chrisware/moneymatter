@@ -3,10 +3,11 @@ import bankDataProviders from './bank-data-providers';
 import enablebanking from './enablebanking';
 import lunchflow from './lunchflow';
 import monobank from './monobank';
+import truelayer from './truelayer';
 import walutomat from './walutomat';
 
 export * from './common';
-export { akahu, bankDataProviders, enablebanking, lunchflow, monobank, walutomat };
+export { akahu, bankDataProviders, enablebanking, lunchflow, monobank, truelayer, walutomat };
 export * from './account';
 export * from './refunds';
 export * from './transfers';
