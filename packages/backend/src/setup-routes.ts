@@ -12,6 +12,7 @@ import accountGroupsRoutes from './routes/account-groups';
 import accountsRoutes from './routes/accounts.route';
 import adminRoutes from './routes/admin.route';
 import attachmentsRoutes from './routes/attachments.route';
+import backgroundJobsRoutes from './routes/background-jobs.route';
 import bankDataProvidersRoutes from './routes/bank-data-providers.route';
 import betterAuthExtensionsRoutes from './routes/better-auth-extensions.route';
 import billingRoutes from './routes/billing.route';
@@ -179,6 +180,7 @@ export function setupRoutes(app: Express) {
   app.use(`${API_PREFIX}/accounts`, accountsRoutes);
   app.use(`${API_PREFIX}/transactions`, transactionsRoutes);
   app.use(`${API_PREFIX}/attachments`, attachmentsRoutes);
+  app.use(`${API_PREFIX}/background-jobs`, backgroundJobsRoutes);
   app.use(`${API_PREFIX}/logo-images`, logoImagesRoutes);
   app.use(`${API_PREFIX}/categories`, categoriesRoutes);
   app.use(`${API_PREFIX}/models/currencies`, modelsCurrenciesRoutes);
