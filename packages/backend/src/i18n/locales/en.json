@@ -366,6 +366,7 @@
     "truelayer": {
       "invalidCredentialsFormat": "Invalid TrueLayer credentials format. Client ID and Client Secret are required.",
       "invalidCredentials": "Invalid TrueLayer credentials. Check the Client ID and Client Secret from your TrueLayer Console application.",
+      "redirectUriNotRegistered": "TrueLayer rejected the callback URL. Add this app's /bank-callback URL (e.g. http://localhost:8080/bank-callback) to the Redirect URIs of your TrueLayer Console application.",
       "authUrlNotFound": "Authorization URL not found for this connection. Start the reconnect flow.",
       "noAuthUrl": "TrueLayer did not return an authorization URL for this connection.",
       "noPendingAuthorization": "No bank authorization is pending for this connection.",

@@ -85,6 +85,28 @@ describe('TrueLayer Data Provider E2E', () => {
       expect(result.status).toEqual(ERROR_CODES.ValidationError);
     });
 
+    it('surfaces an unregistered redirect URI with the console hint', async () => {
+      // TrueLayer answers 403 when this instance's callback URL is missing
+      // from the app's Redirect URIs; the user must get the actionable hint.
+      global.mswMockServer.use(
+        http.post(`${TL_API_BASE_URL}/v3/data-connections`, () =>
+          HttpResponse.json(
+            { type: 'https://docs.truelayer.com/#connection-api-errors', title: 'Forbidden', status: 403 },
+            { status: 403 },
+          ),
+        ),
+      );
+
+      const result = await helpers.makeRequest<{ message?: string }>({
+        method: 'post',
+        url: `/bank-data-providers/${BANK_PROVIDER_TYPE.TRUELAYER}/connect`,
+        payload: { credentials: { clientId: VALID_TL_CLIENT_ID, clientSecret: VALID_TL_CLIENT_SECRET } },
+      });
+
+      expect(result.status).toEqual(ERROR_CODES.Forbidden);
+      expect(result.body?.response?.message).toContain('Redirect URIs');
+    });
+
     it('returns 503 from the callback while the bank-side consent is still pending', async () => {
       global.mswMockServer.use(getTrueLayerPendingAccountsMock());
 
