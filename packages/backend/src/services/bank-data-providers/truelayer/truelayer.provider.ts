@@ -29,6 +29,7 @@ import {
 import { getEmailForUser } from '@services/sharing/find-user-by-email.service';
 import { createTransaction } from '@services/transactions';
 import { accountHasPlannedRows } from '@services/transactions/planned-matching';
+import { randomUUID } from 'node:crypto';
 import { Op, Sequelize } from 'sequelize';
 
 import { clampSyncStartToLink } from '../utils/clamp-sync-start-to-link';
@@ -36,7 +37,13 @@ import { encryptCredentials } from '../utils/credential-encryption';
 import { notifyPlannedConfirmations } from '../utils/notify-planned-confirmations';
 import { writeBankBalanceWithHistory } from '../utils/write-bank-balance-with-history';
 import { centsFromMinorUnits, TrueLayerApiClient } from './api-client';
-import type { TrueLayerApiAccount, TrueLayerApiTransaction, TrueLayerCredentials, TrueLayerMetadata } from './types';
+import type {
+  TrueLayerApiAccount,
+  TrueLayerApiBalanceResponse,
+  TrueLayerApiTransaction,
+  TrueLayerCredentials,
+  TrueLayerMetadata,
+} from './types';
 
 /**
  * The callback page the TrueLayer hosted journey returns the user to.
@@ -55,6 +62,15 @@ const getRedirectUrl = (manualReturn = false) =>
  * resolved by creating a fresh data connection via `reauthorize`).
  */
 const CONSENT_WINDOW_DAYS = 180;
+
+/**
+ * v1 refresh tokens live ~90 days (SSR banks may revoke earlier). Stamping a
+ * shorter window makes the UI nudge a reconnect before data silently stops.
+ */
+const V1_CONSENT_WINDOW_DAYS = 90;
+
+/** Refresh the v1 bearer this many seconds before its real expiry. */
+const V1_TOKEN_MARGIN_S = 120;
 
 /**
  * Incremental fetches start this far before the newest stored transaction.
@@ -88,11 +104,17 @@ interface PersisterCounters {
 }
 
 /**
- * TrueLayer provider implementation (Data API v3).
+ * TrueLayer provider implementation.
  * Syncs UK bank accounts (HSBC, Barclays, Monzo, …) through the user's own
  * TrueLayer application: app client-credentials are stored per connection and
- * each bank link is a Data v3 `Connection-Id` established via TrueLayer's
- * hosted authorization page.
+ * each bank link is established via TrueLayer's hosted authorization page.
+ *
+ * Two API generations are supported, chosen per connection at connect time:
+ * - `v3` (default): the Data API with Connection-Id-scoped data calls.
+ * - `v1` (legacy): the OAuth authorization-code + rotating refresh-token flow
+ *   (Unified Data Model, major-unit amounts) for apps that predate Data v3
+ *   and lack the `data` scope. User tokens live in the encrypted credentials
+ *   column; consent lapses after ~90 days, handled by the reauthorize journey.
  *
  * Docs: https://docs.truelayer.com/docs/enable-your-users-to-connect-their-bank-account
  */
@@ -122,7 +144,11 @@ export class TrueLayerProvider extends BaseBankDataProvider {
 
   async connect(userId: number, credentials: unknown): Promise<string> {
     if (!this.isValidCredentials(credentials)) {
-      throw new ValidationError({ message: t({ key: 'bankDataProviders.truelayer.invalidCredentialsFormat' }) });
+      throw new ValidationError({
+        message: t({
+          key: 'bankDataProviders.truelayer.invalidCredentialsFormat',
+        }),
+      });
     }
 
     const apiClient = new TrueLayerApiClient(credentials);
@@ -132,14 +158,37 @@ export class TrueLayerProvider extends BaseBankDataProvider {
     // from "TrueLayer is down".
     const isValid = await apiClient.testConnection();
     if (!isValid) {
-      throw new ForbiddenError({ message: t({ key: 'bankDataProviders.truelayer.invalidCredentials' }) });
+      throw new ForbiddenError({
+        message: t({ key: 'bankDataProviders.truelayer.invalidCredentials' }),
+      });
     }
 
     const endUser = await this.getEndUser(userId);
     const manualReturn = credentials.manualReturn === true;
-    const created = await apiClient.createDataConnection({ returnUri: getRedirectUrl(manualReturn), user: endUser });
-    if (!created.hosted_page?.uri) {
-      throw new BadRequestError({ message: t({ key: 'bankDataProviders.truelayer.noAuthUrl' }) });
+    const apiVersion = credentials.apiVersion === 'v1' ? 'v1' : 'v3';
+    const redirectUri = getRedirectUrl(manualReturn);
+
+    // v1 has no Connection-Id: the journey is a pure authorization link and
+    // confirmation is a code exchange done by the callback.
+    const v1State = randomUUID();
+    let authUrl: string;
+    let tlPendingConnectionId: string | undefined;
+    let tlUserId: string | undefined;
+    if (apiVersion === 'v1') {
+      authUrl = apiClient.buildV1AuthUrl({ redirectUri, state: v1State });
+    } else {
+      const created = await apiClient.createDataConnection({
+        returnUri: redirectUri,
+        user: endUser,
+      });
+      if (!created.hosted_page?.uri) {
+        throw new BadRequestError({
+          message: t({ key: 'bankDataProviders.truelayer.noAuthUrl' }),
+        });
+      }
+      authUrl = created.hosted_page.uri;
+      tlPendingConnectionId = created.id;
+      tlUserId = created.user?.id;
     }
 
     const existingConnections = await BankDataProviderConnections.count({
@@ -152,7 +201,7 @@ export class TrueLayerProvider extends BaseBankDataProvider {
       providerType: this.metadata.type,
       providerName,
       // Stays inactive until the user finishes the hosted journey and the
-      // callback confirms the Connection-Id serves data.
+      // callback confirms the authorization.
       isActive: false,
       credentials: encryptCredentials({
         clientId: credentials.clientId,
@@ -160,9 +209,11 @@ export class TrueLayerProvider extends BaseBankDataProvider {
         environment: credentials.environment ?? 'production',
       }),
       metadata: {
-        tlPendingConnectionId: created.id,
-        tlUserId: created.user?.id ?? null,
-        authUrl: created.hosted_page.uri,
+        apiVersion,
+        ...(apiVersion === 'v1'
+          ? { tlPendingState: v1State, tlV1RedirectUri: redirectUri }
+          : { tlPendingConnectionId, tlUserId }),
+        authUrl,
         manualReturn,
         accountCount: 0,
         consecutiveAuthFailures: 0,
@@ -183,7 +234,9 @@ export class TrueLayerProvider extends BaseBankDataProvider {
 
     const metadata = connection.metadata as TrueLayerMetadata;
     if (!metadata.authUrl) {
-      throw new BadRequestError({ message: t({ key: 'bankDataProviders.truelayer.authUrlNotFound' }) });
+      throw new BadRequestError({
+        message: t({ key: 'bankDataProviders.truelayer.authUrlNotFound' }),
+      });
     }
     return metadata.authUrl;
   }
@@ -194,18 +247,36 @@ export class TrueLayerProvider extends BaseBankDataProvider {
    * confirmation is "does this Connection-Id serve data yet?" — TrueLayer
    * answers `invalid_state` until the user's consent is active at the bank.
    */
-  async handleAuthorizationCallback(connectionId: string): Promise<void> {
+  async handleAuthorizationCallback(
+    connectionId: string,
+    params?: { code?: string; state?: string; redirectUrl?: string },
+  ): Promise<void> {
     const connection = await this.getConnection(connectionId);
     this.validateProviderType(connection);
 
     const credentials = await this.getValidatedCredentials(connectionId);
     const metadata = connection.metadata as TrueLayerMetadata;
+
+    if (metadata.apiVersion === 'v1') {
+      await this.completeV1Authorization({
+        connection,
+        credentials,
+        metadata,
+        params,
+      });
+      return;
+    }
+
     const pendingId = metadata.tlPendingConnectionId;
 
     if (!pendingId) {
       // Already confirmed (double-submit / refreshed page) — idempotent success.
       if (metadata.tlConnectionId) return;
-      throw new BadRequestError({ message: t({ key: 'bankDataProviders.truelayer.noPendingAuthorization' }) });
+      throw new BadRequestError({
+        message: t({
+          key: 'bankDataProviders.truelayer.noPendingAuthorization',
+        }),
+      });
     }
 
     const apiClient = new TrueLayerApiClient(credentials);
@@ -217,7 +288,9 @@ export class TrueLayerProvider extends BaseBankDataProvider {
     if (!accountsResponse) {
       // 503: consent not active YET — the user may still be finishing the bank
       // side of the journey; the callback page retries on this code.
-      throw new ServiceUnavailableError({ message: t({ key: 'bankDataProviders.truelayer.authorizationPending' }) });
+      throw new ServiceUnavailableError({
+        message: t({ key: 'bankDataProviders.truelayer.authorizationPending' }),
+      });
     }
 
     const now = new Date();
@@ -243,7 +316,157 @@ export class TrueLayerProvider extends BaseBankDataProvider {
     // A reauthorize produced a NEW Connection-Id, and account ids are scoped to
     // a connection — re-match existing system accounts by their stable bank
     // identifier so their synced history keeps flowing.
-    await this.updateExistingAccountExternalIds({ connectionId, newAccounts: accounts });
+    await this.updateExistingAccountExternalIds({
+      connectionId,
+      newAccounts: accounts,
+    });
+  }
+
+  /**
+   * v1 confirmation: validate the OAuth `state`, exchange the authorization
+   * code for the user's rotating token pair (persisted in the encrypted
+   * credentials column), snapshot the account list, and activate.
+   */
+  private async completeV1Authorization({
+    connection,
+    credentials,
+    metadata,
+    params,
+  }: {
+    connection: BankDataProviderConnections;
+    credentials: TrueLayerCredentials;
+    metadata: TrueLayerMetadata;
+    params?: { code?: string; state?: string; redirectUrl?: string };
+  }): Promise<void> {
+    let code = params?.code;
+    let state = params?.state;
+    if (params?.redirectUrl) {
+      // Manual-confirm mode: the user pastes the full redirect URL TrueLayer
+      // showed them; pull code/state out of its query string.
+      let query: URLSearchParams;
+      try {
+        query = new URL(params.redirectUrl, 'http://localhost').searchParams;
+      } catch {
+        throw new BadRequestError({
+          message: t({ key: 'bankDataProviders.truelayer.invalidCode' }),
+        });
+      }
+      code = query.get('code') ?? code;
+      state = query.get('state') ?? state;
+    }
+
+    if (!metadata.tlPendingState) {
+      // Already confirmed (double-submit / refreshed page) — idempotent success.
+      if (credentials.v1Token) return;
+      throw new BadRequestError({
+        message: t({
+          key: 'bankDataProviders.truelayer.noPendingAuthorization',
+        }),
+      });
+    }
+    if (state !== metadata.tlPendingState) {
+      throw new BadRequestError({
+        message: t({ key: 'bankDataProviders.truelayer.stateMismatch' }),
+      });
+    }
+    if (!code) {
+      throw new BadRequestError({
+        message: t({ key: 'bankDataProviders.truelayer.invalidCode' }),
+      });
+    }
+
+    const apiClient = new TrueLayerApiClient(credentials);
+    const redirectUri = metadata.tlV1RedirectUri ?? getRedirectUrl(metadata.manualReturn === true);
+    const tokens = await apiClient.exchangeV1Code({ code, redirectUri });
+
+    const now = new Date();
+    // Persist the code-derived tokens immediately: the code is consumed at
+    // TrueLayer, so a later step failing must not strand the connection with
+    // no way to mint new tokens.
+    connection.setEncryptedCredentials({
+      ...credentials,
+      v1Token: {
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token ?? credentials.v1Token?.refreshToken ?? '',
+        accessExpiresAt: new Date(
+          now.getTime() + Math.max(0, (tokens.expires_in ?? 3600) - V1_TOKEN_MARGIN_S) * 1000,
+        ).toISOString(),
+      },
+    });
+    await connection.save();
+
+    // Account snapshot is best-effort — the account picker/sync re-fetches.
+    let accounts: TrueLayerApiAccount[] = metadata.accounts ?? [];
+    try {
+      accounts = await apiClient.v1GetAccounts(tokens.access_token);
+    } catch (error) {
+      logger.info(`[TrueLayer] v1 account snapshot after exchange failed: ${String((error as Error).message)}`);
+    }
+
+    const fresh = await this.getConnection(connection.id);
+    fresh.metadata = {
+      ...(fresh.metadata as TrueLayerMetadata),
+      authUrl: undefined,
+      tlPendingState: undefined,
+      tlV1RedirectUri: undefined,
+      accounts,
+      accountCount: accounts.length,
+      consentValidFrom: now.toISOString(),
+      consentValidUntil: new Date(now.getTime() + V1_CONSENT_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString(),
+      consecutiveAuthFailures: 0,
+      deactivationReason: null,
+    } satisfies TrueLayerMetadata as any;
+    fresh.isActive = true;
+    await fresh.save();
+
+    await this.updateExistingAccountExternalIds({
+      connectionId: fresh.id,
+      newAccounts: accounts,
+    });
+  }
+
+  /**
+   * Fresh v1 bearer token for the connection: cached while valid, otherwise
+   * refreshed — TrueLayer rotates the refresh token on every renewal, so the
+   * returned pair is written back to the encrypted credentials column.
+   */
+  private async ensureV1UserToken({
+    connection,
+    credentials,
+  }: {
+    connection: BankDataProviderConnections;
+    credentials: TrueLayerCredentials;
+  }): Promise<string> {
+    const stored = credentials.v1Token;
+    if (!stored?.accessToken || !stored.refreshToken) {
+      throw new BadRequestError({
+        message: t({ key: 'bankDataProviders.truelayer.noActiveConnection' }),
+      });
+    }
+
+    if (new Date(stored.accessExpiresAt).getTime() > Date.now() + V1_TOKEN_MARGIN_S * 1000) {
+      return stored.accessToken;
+    }
+
+    const apiClient = new TrueLayerApiClient(credentials);
+    const tokens = await apiClient.refreshV1Token(stored.refreshToken);
+
+    connection.setEncryptedCredentials({
+      ...credentials,
+      v1Token: {
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token ?? stored.refreshToken,
+        accessExpiresAt: new Date(
+          Date.now() + Math.max(0, (tokens.expires_in ?? 3600) - V1_TOKEN_MARGIN_S) * 1000,
+        ).toISOString(),
+      },
+    });
+    // Detached: commits outside any sync transaction so a concurrent second
+    // account sync of the same connection can't deadlock on the row, and the
+    // rotated refresh token survives even if the caller's sync rolls back.
+    await this.saveConnectionDetached(connection);
+
+    return tokens.access_token;
   }
 
   /**
@@ -259,6 +482,27 @@ export class TrueLayerProvider extends BaseBankDataProvider {
     const metadata = connection.metadata as TrueLayerMetadata;
 
     const apiClient = new TrueLayerApiClient(credentials);
+
+    // v1: mint a brand-new authorization link + state; the stale rotating
+    // tokens stay put (a dead consent surfaces via the auth-failure engine)
+    // and are replaced when the fresh exchange lands.
+    if (metadata.apiVersion === 'v1') {
+      const state = randomUUID();
+      const redirectUri = getRedirectUrl(metadata.manualReturn === true);
+      const authUrl = apiClient.buildV1AuthUrl({ redirectUri, state });
+
+      connection.isActive = false;
+      connection.metadata = {
+        ...metadata,
+        authUrl,
+        tlPendingState: state,
+        tlV1RedirectUri: redirectUri,
+        consentValidUntil: new Date().toISOString(),
+      } as TrueLayerMetadata;
+      await connection.save();
+      return authUrl;
+    }
+
     const endUser = await this.getEndUser(connection.userId);
     const created = await apiClient.createDataConnection({
       returnUri: getRedirectUrl(metadata.manualReturn === true),
@@ -266,7 +510,9 @@ export class TrueLayerProvider extends BaseBankDataProvider {
       tlUserId: metadata.tlUserId,
     });
     if (!created.hosted_page?.uri) {
-      throw new BadRequestError({ message: t({ key: 'bankDataProviders.truelayer.noAuthUrl' }) });
+      throw new BadRequestError({
+        message: t({ key: 'bankDataProviders.truelayer.noAuthUrl' }),
+      });
     }
 
     // Mark inactive + expired up-front: every surfacing (badge, banner) shows
@@ -304,7 +550,11 @@ export class TrueLayerProvider extends BaseBankDataProvider {
 
   async refreshCredentials(connectionId: string, newCredentials: unknown): Promise<void> {
     if (!this.isValidCredentials(newCredentials)) {
-      throw new ValidationError({ message: t({ key: 'bankDataProviders.truelayer.invalidCredentialsFormat' }) });
+      throw new ValidationError({
+        message: t({
+          key: 'bankDataProviders.truelayer.invalidCredentialsFormat',
+        }),
+      });
     }
 
     const connection = await this.getConnection(connectionId);
@@ -313,17 +563,28 @@ export class TrueLayerProvider extends BaseBankDataProvider {
     const apiClient = new TrueLayerApiClient(newCredentials);
     const isValid = await apiClient.testConnection();
     if (!isValid) {
-      throw new ForbiddenError({ message: t({ key: 'bankDataProviders.truelayer.invalidCredentials' }) });
+      throw new ForbiddenError({
+        message: t({ key: 'bankDataProviders.truelayer.invalidCredentials' }),
+      });
     }
+
+    const existing = (await this.getDecryptedCredentials(connectionId)) as unknown as TrueLayerCredentials | undefined;
+    const existingMetadata = connection.metadata as TrueLayerMetadata;
 
     connection.setEncryptedCredentials({
       clientId: newCredentials.clientId,
       clientSecret: newCredentials.clientSecret,
       environment: newCredentials.environment ?? 'production',
+      apiVersion: newCredentials.apiVersion ?? existing?.apiVersion ?? existingMetadata.apiVersion,
+      // v1 user tokens are consented against the old app; a rotated client_id
+      // invalidates them, so the user must reauthorize instead.
+      v1Token: existing?.v1Token && existing.clientId === newCredentials.clientId ? existing.v1Token : undefined,
     });
 
     // New object reference so Sequelize persists the JSONB reset.
-    const metadata: TrueLayerMetadata = { ...(connection.metadata as TrueLayerMetadata) };
+    const metadata: TrueLayerMetadata = {
+      ...(connection.metadata as TrueLayerMetadata),
+    };
     metadata.consecutiveAuthFailures = 0;
     metadata.deactivationReason = null;
     connection.metadata = metadata;
@@ -337,12 +598,21 @@ export class TrueLayerProvider extends BaseBankDataProvider {
   // ============================================================================
 
   async fetchAccounts(connectionId: string): Promise<ProviderAccount[]> {
-    const { credentials, tlConnectionId } = await this.getAuthorizedState(connectionId);
-    const apiClient = new TrueLayerApiClient(credentials);
+    const ctx = await this.getAuthorizationContext(connectionId);
+    const apiClient = new TrueLayerApiClient(ctx.credentials);
 
-    let accountsResponse;
+    let accounts: TrueLayerApiAccount[];
     try {
-      accountsResponse = await apiClient.getConnectedAccounts({ connectionId: tlConnectionId });
+      accounts =
+        ctx.apiVersion === 'v1'
+          ? await apiClient.v1GetAccounts(ctx.userToken)
+          : (
+              (
+                await apiClient.getConnectedAccounts({
+                  connectionId: ctx.tlConnectionId,
+                })
+              )?.items ?? []
+            ).filter((a) => a.type === 'account');
       await this.resetAuthFailures(connectionId);
     } catch (error) {
       await this.handleProviderError({ connectionId, error });
@@ -350,16 +620,16 @@ export class TrueLayerProvider extends BaseBankDataProvider {
     }
 
     const providerAccounts: ProviderAccount[] = [];
-    for (const account of accountsResponse?.items ?? []) {
-      // v3 cards share the listing but carry no currency/balance semantics yet.
-      if (account.type !== 'account') continue;
-
+    for (const account of accounts) {
       let balance: Cents = asCents(0);
       try {
-        const balanceResponse = await apiClient.getAccountBalance({
-          connectionId: tlConnectionId,
-          accountId: account.id,
-        });
+        const balanceResponse =
+          ctx.apiVersion === 'v1'
+            ? await apiClient.v1GetAccountBalance(ctx.userToken, account.id)
+            : await apiClient.getAccountBalance({
+                connectionId: ctx.tlConnectionId,
+                accountId: account.id,
+              });
         balance = asCents(
           centsFromMinorUnits(
             balanceResponse.current_balance_in_minor ?? 0,
@@ -429,7 +699,9 @@ export class TrueLayerProvider extends BaseBankDataProvider {
     connectionId: string;
     newAccounts: TrueLayerApiAccount[];
   }): Promise<void> {
-    const existing = await Accounts.findAll({ where: { bankDataProviderConnectionId: connectionId } });
+    const existing = await Accounts.findAll({
+      where: { bankDataProviderConnectionId: connectionId },
+    });
     const newIds = new Set(newAccounts.map((a) => a.id));
     const byKey = new Map<string, TrueLayerApiAccount>();
     for (const account of newAccounts) {
@@ -446,7 +718,10 @@ export class TrueLayerProvider extends BaseBankDataProvider {
 
       await account.update({
         externalId: match.id,
-        externalData: { ...(account.externalData as object), rawAccountData: match },
+        externalData: {
+          ...(account.externalData as object),
+          rawAccountData: match,
+        },
       });
       logger.info(
         `[TrueLayer] Re-linked account ${account.id} to connection account ${match.id} after reauthorization`,
@@ -463,16 +738,24 @@ export class TrueLayerProvider extends BaseBankDataProvider {
     accountExternalId: string,
     dateRange?: DateRange,
   ): Promise<ProviderTransaction[]> {
-    const { credentials, tlConnectionId } = await this.getAuthorizedState(connectionId);
-    const apiClient = new TrueLayerApiClient(credentials);
+    const ctx = await this.getAuthorizationContext(connectionId);
+    const apiClient = new TrueLayerApiClient(ctx.credentials);
 
     const { from, to } = this.resolveRange(dateRange);
-    const transactions = await apiClient.getTransactions({
-      connectionId: tlConnectionId,
-      accountId: accountExternalId,
-      from,
-      to,
-    });
+    const transactions =
+      ctx.apiVersion === 'v1'
+        ? await apiClient.v1GetTransactions({
+            userToken: ctx.userToken,
+            accountId: accountExternalId,
+            from,
+            to,
+          })
+        : await apiClient.getTransactions({
+            connectionId: ctx.tlConnectionId,
+            accountId: accountExternalId,
+            from,
+            to,
+          });
 
     return transactions.filter((tx) => tx.status === 'settled').map((tx) => this.toProviderTransaction(tx));
   }
@@ -509,11 +792,15 @@ export class TrueLayerProvider extends BaseBankDataProvider {
         this.validateProviderType(connection);
 
         if (!account.externalId) {
-          throw new BadRequestError({ message: t({ key: 'bankDataProviders.truelayer.accountNoExternalId' }) });
+          throw new BadRequestError({
+            message: t({
+              key: 'bankDataProviders.truelayer.accountNoExternalId',
+            }),
+          });
         }
 
-        const { credentials, tlConnectionId } = await this.getAuthorizedState(connectionId);
-        const apiClient = new TrueLayerApiClient(credentials);
+        const ctx = await this.getAuthorizationContext(connectionId);
+        const apiClient = new TrueLayerApiClient(ctx.credentials);
 
         const anyStoredTransaction = await findOneTransaction({
           planned: 'exclude',
@@ -534,12 +821,18 @@ export class TrueLayerProvider extends BaseBankDataProvider {
           ? clampSyncStartToLink({ account, from: new Date(0) })
           : new Date(0);
 
-        const persister = await this.createPersister({ connection, account, matchPlanned, createFromDate });
+        const persister = await this.createPersister({
+          connection,
+          account,
+          matchPlanned,
+          createFromDate,
+        });
 
         let fetched: TrueLayerApiTransaction[];
         try {
-          fetched = await apiClient.getTransactions({
-            connectionId: tlConnectionId,
+          fetched = await this.fetchTransactionsFor({
+            ctx,
+            apiClient,
             accountId: account.externalId,
             from,
             to,
@@ -568,8 +861,9 @@ export class TrueLayerProvider extends BaseBankDataProvider {
 
         // Authoritative end-of-sync balance from the dedicated endpoint.
         try {
-          const balanceResponse = await apiClient.getAccountBalance({
-            connectionId: tlConnectionId,
+          const balanceResponse = await this.fetchBalanceFor({
+            ctx,
+            apiClient,
             accountId: account.externalId,
           });
           await writeBankBalanceWithHistory({
@@ -585,7 +879,10 @@ export class TrueLayerProvider extends BaseBankDataProvider {
           );
         }
 
-        return { transactionIds: counters.createdTransactionIds, fetchedCount: fetched.length };
+        return {
+          transactionIds: counters.createdTransactionIds,
+          fetchedCount: fetched.length,
+        };
       },
     });
   }
@@ -614,11 +911,15 @@ export class TrueLayerProvider extends BaseBankDataProvider {
         this.validateProviderType(connection);
 
         if (!account.externalId) {
-          throw new BadRequestError({ message: t({ key: 'bankDataProviders.truelayer.accountNoExternalId' }) });
+          throw new BadRequestError({
+            message: t({
+              key: 'bankDataProviders.truelayer.accountNoExternalId',
+            }),
+          });
         }
 
-        const { credentials, tlConnectionId } = await this.getAuthorizedState(connectionId);
-        const apiClient = new TrueLayerApiClient(credentials);
+        const ctx = await this.getAuthorizationContext(connectionId);
+        const apiClient = new TrueLayerApiClient(ctx.credentials);
 
         // No `matchPlanned`: a charge from an arbitrary past window must not
         // consume a plan the user made for something else.
@@ -631,8 +932,9 @@ export class TrueLayerProvider extends BaseBankDataProvider {
 
         let fetched: TrueLayerApiTransaction[];
         try {
-          fetched = await apiClient.getTransactions({
-            connectionId: tlConnectionId,
+          fetched = await this.fetchTransactionsFor({
+            ctx,
+            apiClient,
             accountId: account.externalId,
             from,
             to,
@@ -645,7 +947,10 @@ export class TrueLayerProvider extends BaseBankDataProvider {
         }
         const counters = persister.counters();
 
-        return { transactionIds: counters.createdTransactionIds, fetchedCount: fetched.length };
+        return {
+          transactionIds: counters.createdTransactionIds,
+          fetchedCount: fetched.length,
+        };
       },
     });
 
@@ -663,9 +968,13 @@ export class TrueLayerProvider extends BaseBankDataProvider {
   // ============================================================================
 
   async fetchBalance(connectionId: string, accountExternalId: string): Promise<ProviderBalance> {
-    const { credentials, tlConnectionId } = await this.getAuthorizedState(connectionId);
-    const apiClient = new TrueLayerApiClient(credentials);
-    const balance = await apiClient.getAccountBalance({ connectionId: tlConnectionId, accountId: accountExternalId });
+    const ctx = await this.getAuthorizationContext(connectionId);
+    const apiClient = new TrueLayerApiClient(ctx.credentials);
+    const balance = await this.fetchBalanceFor({
+      ctx,
+      apiClient,
+      accountId: accountExternalId,
+    });
 
     return {
       amount: asCents(centsFromMinorUnits(balance.current_balance_in_minor ?? 0, balance.currency)),
@@ -678,11 +987,16 @@ export class TrueLayerProvider extends BaseBankDataProvider {
     const account = await this.getSystemAccount(systemAccountId);
 
     if (!account.externalId) {
-      throw new BadRequestError({ message: t({ key: 'bankDataProviders.truelayer.accountNoExternalId' }) });
+      throw new BadRequestError({
+        message: t({ key: 'bankDataProviders.truelayer.accountNoExternalId' }),
+      });
     }
 
     const balance = await this.fetchBalance(connectionId, account.externalId);
-    await writeBankBalanceWithHistory({ account, balance: Money.fromCents(balance.amount) });
+    await writeBankBalanceWithHistory({
+      account,
+      balance: Money.fromCents(balance.amount),
+    });
   }
 
   // ============================================================================
@@ -710,12 +1024,16 @@ export class TrueLayerProvider extends BaseBankDataProvider {
     persist: (transactions: TrueLayerApiTransaction[]) => Promise<void>;
     counters: () => PersisterCounters;
   }> {
-    const defaultCategoryId = await getUserDefaultCategory({ id: connection.userId });
+    const defaultCategoryId = await getUserDefaultCategory({
+      id: connection.userId,
+    });
     const createdTransactionIds: string[] = [];
     let mergedIntoPlannedCount = 0;
     let skippedPreLinkCount = 0;
     let skippedPendingCount = 0;
-    const checkpoint = this.createBaseCurrencyLockCheckpoint({ userId: connection.userId });
+    const checkpoint = this.createBaseCurrencyLockCheckpoint({
+      userId: connection.userId,
+    });
 
     const persist = async (transactions: TrueLayerApiTransaction[]): Promise<void> => {
       // Persist in ledger order so planned-merge sees transactions ascending.
@@ -797,7 +1115,12 @@ export class TrueLayerProvider extends BaseBankDataProvider {
 
     return {
       persist,
-      counters: () => ({ createdTransactionIds, mergedIntoPlannedCount, skippedPreLinkCount, skippedPendingCount }),
+      counters: () => ({
+        createdTransactionIds,
+        mergedIntoPlannedCount,
+        skippedPreLinkCount,
+        skippedPendingCount,
+      }),
     };
   }
 
@@ -844,19 +1167,99 @@ export class TrueLayerProvider extends BaseBankDataProvider {
     }
   }
 
-  /** Credentials + authorized Connection-Id, or a clear error if consent is missing. */
-  private async getAuthorizedState(
-    connectionId: string,
-  ): Promise<{ credentials: TrueLayerCredentials; tlConnectionId: string }> {
+  /**
+   * Credentials + whatever the next data call needs to authorize: a v3
+   * Connection-Id, or a fresh (refreshed-and-persisted) v1 user bearer.
+   */
+  private async getAuthorizationContext(connectionId: string): Promise<
+    | {
+        apiVersion: 'v3';
+        credentials: TrueLayerCredentials;
+        tlConnectionId: string;
+      }
+    | { apiVersion: 'v1'; credentials: TrueLayerCredentials; userToken: string }
+  > {
     const credentials = await this.getValidatedCredentials(connectionId);
     const connection = await this.getConnection(connectionId);
     const metadata = connection.metadata as TrueLayerMetadata;
 
-    if (!metadata.tlConnectionId) {
-      throw new BadRequestError({ message: t({ key: 'bankDataProviders.truelayer.noActiveConnection' }) });
+    if (metadata.apiVersion === 'v1') {
+      try {
+        const userToken = await this.ensureV1UserToken({
+          connection,
+          credentials,
+        });
+        return { apiVersion: 'v1', credentials, userToken };
+      } catch (error) {
+        // A dead refresh token must deactivate the connection (reconnect UX),
+        // exactly like a data-plane consent failure.
+        await this.handleProviderError({ connectionId, error });
+        throw error;
+      }
     }
 
-    return { credentials, tlConnectionId: metadata.tlConnectionId };
+    if (!metadata.tlConnectionId) {
+      throw new BadRequestError({
+        message: t({ key: 'bankDataProviders.truelayer.noActiveConnection' }),
+      });
+    }
+
+    return {
+      apiVersion: 'v3',
+      credentials,
+      tlConnectionId: metadata.tlConnectionId,
+    };
+  }
+
+  /** Transactions for either API generation, paging included. */
+  private async fetchTransactionsFor({
+    ctx,
+    apiClient,
+    accountId,
+    from,
+    to,
+    onPage,
+  }: {
+    ctx: Awaited<ReturnType<TrueLayerProvider['getAuthorizationContext']>>;
+    apiClient: TrueLayerApiClient;
+    accountId: string;
+    from: Date;
+    to: Date;
+    onPage?: (transactions: TrueLayerApiTransaction[]) => void | Promise<void>;
+  }): Promise<TrueLayerApiTransaction[]> {
+    return ctx.apiVersion === 'v1'
+      ? apiClient.v1GetTransactions({
+          userToken: ctx.userToken,
+          accountId,
+          from,
+          to,
+          onPage,
+        })
+      : apiClient.getTransactions({
+          connectionId: ctx.tlConnectionId,
+          accountId,
+          from,
+          to,
+          onPage,
+        });
+  }
+
+  /** Balance for either API generation, normalized to the v3 minor-unit shape. */
+  private async fetchBalanceFor({
+    ctx,
+    apiClient,
+    accountId,
+  }: {
+    ctx: Awaited<ReturnType<TrueLayerProvider['getAuthorizationContext']>>;
+    apiClient: TrueLayerApiClient;
+    accountId: string;
+  }): Promise<TrueLayerApiBalanceResponse> {
+    return ctx.apiVersion === 'v1'
+      ? apiClient.v1GetAccountBalance(ctx.userToken, accountId)
+      : apiClient.getAccountBalance({
+          connectionId: ctx.tlConnectionId,
+          accountId,
+        });
   }
 
   /** End-user identity TrueLayer requires for consent capture: name + email. */
@@ -873,7 +1276,10 @@ export class TrueLayerProvider extends BaseBankDataProvider {
    */
   private resolveRange(dateRange?: DateRange): { from: Date; to: Date } {
     if (dateRange) return dateRange;
-    return { from: new Date(Date.now() - INITIAL_HISTORY_DAYS * 24 * 60 * 60 * 1000), to: new Date() };
+    return {
+      from: new Date(Date.now() - INITIAL_HISTORY_DAYS * 24 * 60 * 60 * 1000),
+      to: new Date(),
+    };
   }
 
   private isValidCredentials(credentials: unknown): credentials is TrueLayerCredentials {
@@ -889,7 +1295,11 @@ export class TrueLayerProvider extends BaseBankDataProvider {
   private async getValidatedCredentials(connectionId: string): Promise<TrueLayerCredentials> {
     const credentials = await this.getDecryptedCredentials(connectionId);
     if (!this.isValidCredentials(credentials)) {
-      throw new ValidationError({ message: t({ key: 'bankDataProviders.truelayer.invalidCredentialsFormat' }) });
+      throw new ValidationError({
+        message: t({
+          key: 'bankDataProviders.truelayer.invalidCredentialsFormat',
+        }),
+      });
     }
     return credentials;
   }

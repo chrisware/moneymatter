@@ -55,6 +55,23 @@
             </div>
           </div>
 
+          <div>
+            <SelectField
+              :model-value="selectedApiVersion"
+              :values="apiVersionOptions"
+              value-key="value"
+              :label="t('pages.integrations.trueLayerConnector.apiVersionLabel')"
+              @update:model-value="(value) => (apiVersion = value ? value.value : 'v3')"
+            />
+            <div class="text-muted-foreground mt-1 text-xs">
+              {{
+                apiVersion === 'v1'
+                  ? t('pages.integrations.trueLayerConnector.apiVersionV1Hint')
+                  : t('pages.integrations.trueLayerConnector.apiVersionV3Hint')
+              }}
+            </div>
+          </div>
+
           <CredentialsHelpTrigger
             :label="t('pages.integrations.trueLayerConnector.help.trigger')"
             @click="showHelp = true"
@@ -82,7 +99,9 @@
     <template v-else-if="currentStep === 2">
       <div class="space-y-4">
         <div class="space-y-2">
-          <div class="font-medium">{{ t('pages.integrations.trueLayerConnector.continueTitle') }}</div>
+          <div class="font-medium">
+            {{ t('pages.integrations.trueLayerConnector.continueTitle') }}
+          </div>
           <p class="text-muted-foreground text-sm">
             {{
               isManualReturn
@@ -90,6 +109,18 @@
                 : t('pages.integrations.trueLayerConnector.continueDescription')
             }}
           </p>
+        </div>
+
+        <div v-if="isManualReturn && apiVersion === 'v1'" class="space-y-1">
+          <InputField
+            v-model="pastedRedirectUrl"
+            type="text"
+            :label="t('pages.integrations.trueLayerConnector.v1PasteLabel')"
+            :placeholder="t('pages.integrations.trueLayerConnector.v1PastePlaceholder')"
+          />
+          <div class="text-muted-foreground text-xs">
+            {{ t('pages.integrations.trueLayerConnector.v1PasteHint') }}
+          </div>
         </div>
 
         <div class="flex flex-wrap gap-2 pt-4">
@@ -100,7 +131,11 @@
                 : t('pages.integrations.trueLayerConnector.continueButton')
             }}
           </UiButton>
-          <UiButton v-if="isManualReturn" :disabled="isLoading" @click="handleManualConfirm">
+          <UiButton
+            v-if="isManualReturn"
+            :disabled="isLoading || (apiVersion === 'v1' && !pastedRedirectUrl.trim())"
+            @click="handleManualConfirm"
+          >
             {{
               isLoading
                 ? t('pages.integrations.trueLayerConnector.confirmingButton')
@@ -198,7 +233,10 @@ const environmentOptions = computed(() => [
     value: 'production' as TrueLayerEnvironment,
     label: t('pages.integrations.trueLayerConnector.environmentProduction'),
   },
-  { value: 'sandbox' as TrueLayerEnvironment, label: t('pages.integrations.trueLayerConnector.environmentSandbox') },
+  {
+    value: 'sandbox' as TrueLayerEnvironment,
+    label: t('pages.integrations.trueLayerConnector.environmentSandbox'),
+  },
 ]);
 const selectedEnvironment = computed(
   () => environmentOptions.value.find((item) => item.value === environment.value) ?? null,
@@ -218,12 +256,39 @@ const returnModeOptions = computed(() => [
     value: 'auto' as TrueLayerReturnMode,
     label: t('pages.integrations.trueLayerConnector.returnModeAuto'),
   },
-  { value: 'manual' as TrueLayerReturnMode, label: t('pages.integrations.trueLayerConnector.returnModeManual') },
+  {
+    value: 'manual' as TrueLayerReturnMode,
+    label: t('pages.integrations.trueLayerConnector.returnModeManual'),
+  },
 ]);
 const selectedReturnMode = computed(
   () => returnModeOptions.value.find((item) => item.value === returnMode.value) ?? null,
 );
 const isManualReturn = computed(() => returnMode.value === 'manual');
+
+// Which Data API the user's TrueLayer app speaks. v3 is the Connection-Id
+// based product; "v1" is the legacy OAuth flow for apps provisioned before
+// Data v3 (no `data` scope) — HSBC-linked legacy apps fall back to it.
+type TrueLayerApiVersion = 'v3' | 'v1';
+const apiVersion = ref<TrueLayerApiVersion>('v3');
+
+const apiVersionOptions = computed(() => [
+  {
+    value: 'v3' as TrueLayerApiVersion,
+    label: t('pages.integrations.trueLayerConnector.apiVersionV3'),
+  },
+  {
+    value: 'v1' as TrueLayerApiVersion,
+    label: t('pages.integrations.trueLayerConnector.apiVersionV1'),
+  },
+]);
+const selectedApiVersion = computed(
+  () => apiVersionOptions.value.find((item) => item.value === apiVersion.value) ?? null,
+);
+
+// v1 manual mode: the exchange needs the authorization code, which only the
+// redirect URL TrueLayer showed the user carries — pasted here.
+const pastedRedirectUrl = ref('');
 
 // connect creates a fresh connection each time, so a retry with unchanged credentials
 // must reuse the connection (and its authUrl) claimed by the first attempt instead of
@@ -233,6 +298,7 @@ const claimed = ref<{
   clientSecret: string;
   environment: TrueLayerEnvironment;
   returnMode: TrueLayerReturnMode;
+  apiVersion: TrueLayerApiVersion;
   connectionId: string;
   authUrl: string;
 } | null>(null);
@@ -263,13 +329,15 @@ const handleConnectProvider = async () => {
       claimed.value.clientId !== id ||
       claimed.value.clientSecret !== secret ||
       claimed.value.environment !== environment.value ||
-      claimed.value.returnMode !== returnMode.value
+      claimed.value.returnMode !== returnMode.value ||
+      claimed.value.apiVersion !== apiVersion.value
     ) {
       const response = await connectProvider(BANK_PROVIDER_TYPE.TRUELAYER, {
         clientId: id,
         clientSecret: secret,
         environment: environment.value,
         manualReturn: returnMode.value === 'manual',
+        apiVersion: apiVersion.value,
       });
       if (!response.authUrl) {
         addErrorNotification(t('pages.integrations.trueLayerConnector.errors.noAuthUrl'));
@@ -280,6 +348,7 @@ const handleConnectProvider = async () => {
         clientSecret: secret,
         environment: environment.value,
         returnMode: returnMode.value,
+        apiVersion: apiVersion.value,
         connectionId: response.connectionId,
         authUrl: response.authUrl,
       };
@@ -313,7 +382,10 @@ const handleManualConfirm = async () => {
   if (!claimed.value || isLoading.value) return;
   try {
     isLoading.value = true;
-    await completeTrueLayerAuthorization(claimed.value.connectionId);
+    await completeTrueLayerAuthorization(
+      claimed.value.connectionId,
+      apiVersion.value === 'v1' ? { redirectUrl: pastedRedirectUrl.value.trim() } : undefined,
+    );
     addSuccessNotification(t('pages.integrations.trueLayerConnector.manualReturnConfirmed'));
     emit('connected');
   } catch (error) {

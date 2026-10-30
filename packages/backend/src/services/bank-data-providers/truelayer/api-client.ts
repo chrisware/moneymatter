@@ -2,7 +2,7 @@ import { t } from '@i18n/index';
 import { BadRequestError, ForbiddenError, NotFoundError, ServiceUnavailableError } from '@js/errors';
 import { logger } from '@js/utils/logger';
 import axios, { AxiosInstance } from 'axios';
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 
 import type {
   TrueLayerApiAccessTokenResponse,
@@ -10,17 +10,30 @@ import type {
   TrueLayerApiAccountsResponse,
   TrueLayerApiBalanceResponse,
   TrueLayerApiCreatedConnection,
+  TrueLayerApiTransaction,
   TrueLayerCredentials,
   TrueLayerEnvironment,
   TrueLayerProblemDetails,
   TrueLayerTransactionsRequestCompleted,
   TrueLayerTransactionsRequestResult,
-  TrueLayerApiTransaction,
+  TrueLayerV1Account,
+  TrueLayerV1Balance,
+  TrueLayerV1BalancesResponse,
+  TrueLayerV1AccountsResponse,
+  TrueLayerV1TokenResponse,
+  TrueLayerV1Transaction,
+  TrueLayerV1TransactionsResponse,
 } from './types';
 
 const HOSTS: Record<TrueLayerEnvironment, { auth: string; api: string }> = {
-  production: { auth: 'https://auth.truelayer.com', api: 'https://api.truelayer.com' },
-  sandbox: { auth: 'https://auth.truelayer-sandbox.com', api: 'https://api.truelayer-sandbox.com' },
+  production: {
+    auth: 'https://auth.truelayer.com',
+    api: 'https://api.truelayer.com',
+  },
+  sandbox: {
+    auth: 'https://auth.truelayer-sandbox.com',
+    api: 'https://api.truelayer-sandbox.com',
+  },
 };
 
 /**
@@ -71,11 +84,17 @@ function tokenGrantsDataAccess(jwt: string): boolean {
 }
 
 /**
- * TrueLayer Data API v3 client.
+ * TrueLayer API client covering both Data API generations.
  *
- * Auth model: POST /connect/token (grant_type=client_credentials, scope `data`)
- * for a short-lived bearer, cached per app; every data call adds
+ * v3 (default): POST /connect/token (grant_type=client_credentials, scope `data`)
+ * for a short-lived app bearer, cached per app; every data call adds
  * `Connection-Id` identifying the user's authorized data connection.
+ *
+ * v1 (legacy): built authorization link → POST /exchange-oauth (code) →
+ * per-user bearer + rotating refresh token via POST /token; data calls are
+ * plain GETs (/accounts, /accounts/{id}/balance, /accounts/{id}/transactions)
+ * whose UDM payloads are mapped into the v3-shaped types here, so the
+ * provider's sync/mapping code is shared.
  *
  * Docs: https://docs.truelayer.com/reference/welcome-api-reference
  */
@@ -116,7 +135,11 @@ export class TrueLayerApiClient {
       if (entry) entry.inflight = undefined;
     });
 
-    tokenCache.set(this.cacheKey, { token: cached?.token ?? '', expiresAt: 0, inflight });
+    tokenCache.set(this.cacheKey, {
+      token: cached?.token ?? '',
+      expiresAt: 0,
+      inflight,
+    });
 
     const token = await inflight;
     return token;
@@ -149,7 +172,11 @@ export class TrueLayerApiClient {
         const status = error.response?.status;
         if (status === 400 || status === 401 || status === 403) {
           // invalid_grant / unauthenticated: the app credentials are wrong.
-          throw new ForbiddenError({ message: t({ key: 'bankDataProviders.truelayer.invalidCredentials' }) });
+          throw new ForbiddenError({
+            message: t({
+              key: 'bankDataProviders.truelayer.invalidCredentials',
+            }),
+          });
         }
       }
       throw error;
@@ -164,6 +191,178 @@ export class TrueLayerApiClient {
     } catch (error) {
       if (error instanceof ForbiddenError) return false;
       throw error;
+    }
+  }
+
+  // ==========================================================================
+  // Legacy Data API v1 (OAuth authorization-code flow)
+  //
+  // For TrueLayer apps provisioned before Data v3 (no `data` scope). There is
+  // no Connection-Id: the user authorizes via a built authorization link on
+  // the same auth host, the resulting code is exchanged at /exchange-oauth
+  // for a per-user bearer + rotating refresh token, and data calls are plain
+  // GETs against /accounts, /accounts/{id}/balance and /accounts/{id}/transactions.
+  // ==========================================================================
+
+  /**
+   * Build the v1 hosted authorization link. No API call is needed: it is a
+   * pure redirect with query params. `state` is a caller-generated CSRF token
+   * echoed back on the redirect; the nonce is fresh per link.
+   */
+  buildV1AuthUrl({ redirectUri, state }: { redirectUri: string; state: string }): string {
+    const params = new URLSearchParams({
+      response_type: 'code',
+      client_id: this.credentials.clientId,
+      scope: V1_SCOPE,
+      redirect_uri: redirectUri,
+      state,
+      nonce: randomBytes(16).toString('base64url'),
+    });
+    return `${HOSTS[this.environment].auth}/?${params.toString()}`;
+  }
+
+  /** POST /exchange-oauth — swap the authorization code for user tokens. */
+  async exchangeV1Code({
+    code,
+    redirectUri,
+  }: {
+    code: string;
+    redirectUri: string;
+  }): Promise<TrueLayerV1TokenResponse> {
+    try {
+      const response = await this.api.post<TrueLayerV1TokenResponse>('/exchange-oauth', {
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: redirectUri,
+        client_id: this.credentials.clientId,
+        client_secret: this.credentials.clientSecret,
+      });
+      return response.data;
+    } catch (error) {
+      if (axios.isAxiosError(error) && (error.response?.status === 400 || error.response?.status === 401)) {
+        // Code invalid, expired, already used, or redirect_uri mismatch.
+        throw new BadRequestError({
+          message: t({ key: 'bankDataProviders.truelayer.invalidCode' }),
+        });
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * POST /token grant_type=refresh_token. TrueLayer ROTATES the refresh token
+   * on every call, so the caller must persist the returned pair. A rejected
+   * grant (expired/revoked consent) maps to ForbiddenError so the shared
+   * auth-failure engine flips the connection to "reconnect".
+   */
+  async refreshV1Token(refreshToken: string): Promise<TrueLayerV1TokenResponse> {
+    try {
+      const response = await this.api.post<TrueLayerV1TokenResponse>('/token', {
+        grant_type: 'refresh_token',
+        refresh_token: refreshToken,
+        client_id: this.credentials.clientId,
+        client_secret: this.credentials.clientSecret,
+      });
+      return response.data;
+    } catch (error) {
+      if (axios.isAxiosError(error) && (error.response?.status === 400 || error.response?.status === 403)) {
+        throw new ForbiddenError({
+          message: t({ key: 'bankDataProviders.truelayer.consentNotActive' }),
+        });
+      }
+      throw error;
+    }
+  }
+
+  /** GET /accounts (user bearer) — mapped into the shared v3-shaped account. */
+  async v1GetAccounts(userToken: string): Promise<TrueLayerApiAccount[]> {
+    const data = await this.v1Request<TrueLayerV1AccountsResponse>(
+      { method: 'get', url: '/accounts' },
+      userToken,
+      'v1GetAccounts',
+    );
+    return (data.results ?? []).map((account) => ({
+      id: account.account_id,
+      type: 'account' as const,
+      currency: account.currency,
+      account_type: normalizeV1AccountType(account.account_type),
+      account_identifiers: v1AccountIdentifiers(account),
+      account_holder_names: account.display_name ? [account.display_name] : [],
+      bic: null,
+      customer_segment: 'retail' as const,
+    }));
+  }
+
+  /** GET /accounts/{id}/balance — UDM reports DECIMAL MAJOR units; convert to minor. */
+  async v1GetAccountBalance(userToken: string, accountId: string): Promise<TrueLayerApiBalanceResponse> {
+    const data = await this.v1Request<TrueLayerV1BalancesResponse>(
+      { method: 'get', url: `/accounts/${accountId}/balance` },
+      userToken,
+      'v1GetAccountBalance',
+    );
+    const balance: TrueLayerV1Balance | undefined = data.results?.[0];
+    return {
+      currency: balance?.currency ?? '',
+      current_balance_in_minor: majorToMinorUnits(balance?.current ?? 0, balance?.currency ?? 'GBP'),
+      available_balance_in_minor:
+        balance?.available === undefined ? null : majorToMinorUnits(balance.available, balance.currency),
+      overdraft_in_minor:
+        balance?.overdraft === undefined ? null : majorToMinorUnits(balance.overdraft, balance.currency),
+    };
+  }
+
+  /**
+   * GET /accounts/{id}/transactions — signed major-unit amounts, no status
+   * field (pending rows are not served under this shape), RFC 3339 dates.
+   * Pages are followed via the `Link: <…>; rel="next"` header, with a hard
+   * ceiling so a bad cursor loop can't hang a sync.
+   */
+  async v1GetTransactions({
+    userToken,
+    accountId,
+    from,
+    to,
+    onPage,
+  }: {
+    userToken: string;
+    accountId: string;
+    from: Date;
+    to: Date;
+    onPage?: (transactions: TrueLayerApiTransaction[]) => void | Promise<void>;
+  }): Promise<TrueLayerApiTransaction[]> {
+    const all: TrueLayerApiTransaction[] = [];
+    let url: string | undefined =
+      `/accounts/${accountId}/transactions?from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}`;
+
+    for (let page = 0; page < V1_TX_MAX_PAGES && url; page += 1) {
+      const response = await this.api.get<TrueLayerV1TransactionsResponse>(url, {
+        headers: { Authorization: `Bearer ${userToken}` },
+      });
+      const mapped = (response.data.results ?? []).map((tx) => v1ToApiTransaction(tx));
+      all.push(...mapped);
+      if (onPage) await onPage(mapped);
+      url = parseLinkNextUrl(response.headers?.link);
+    }
+
+    return all;
+  }
+
+  private async v1Request<T>(
+    config: Parameters<AxiosInstance['request']>[0],
+    userToken: string,
+    method: string,
+  ): Promise<T> {
+    try {
+      const response = await this.api.request<T>({
+        ...config,
+        headers: {
+          ...(config.headers as Record<string, string>),
+          Authorization: `Bearer ${userToken}`,
+        },
+      });
+      return response.data;
+    } catch (error) {
+      throw this.handleApiError(error, method);
     }
   }
 
@@ -202,7 +401,12 @@ export class TrueLayerApiClient {
           hosted_page: { type: 'authorization_flow', return_uri: returnUri },
           data_access_type: 'recurring',
         },
-        { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        },
       );
       return response.data;
     } catch (error) {
@@ -211,7 +415,11 @@ export class TrueLayerApiClient {
       // return URI isn't registered in Console. Decode the bearer's claims to
       // tell them apart.
       if (axios.isAxiosError(error) && error.response?.status === 403 && !tokenGrantsDataAccess(token)) {
-        throw new ForbiddenError({ message: t({ key: 'bankDataProviders.truelayer.dataProductNotEnabled' }) });
+        throw new ForbiddenError({
+          message: t({
+            key: 'bankDataProviders.truelayer.dataProductNotEnabled',
+          }),
+        });
       }
       throw this.handleApiError(error, 'createDataConnection');
     }
@@ -255,7 +463,9 @@ export class TrueLayerApiClient {
     const res = await this.getConnectedAccounts({ connectionId });
     const found = (res?.items ?? []).find((a) => a.id === accountId);
     if (!found) {
-      throw new NotFoundError({ message: t({ key: 'bankDataProviders.truelayer.accountNotFound' }) });
+      throw new NotFoundError({
+        message: t({ key: 'bankDataProviders.truelayer.accountNotFound' }),
+      });
     }
     return found;
   }
@@ -300,8 +510,18 @@ export class TrueLayerApiClient {
     let cursor: string | null = null;
 
     do {
-      const created = await this.createTransactionsRequest({ connectionId, accountId, from, to, cursor });
-      const completed = await this.pollTransactionsRequest({ connectionId, accountId, requestId: created.id });
+      const created = await this.createTransactionsRequest({
+        connectionId,
+        accountId,
+        from,
+        to,
+        cursor,
+      });
+      const completed = await this.pollTransactionsRequest({
+        connectionId,
+        accountId,
+        requestId: created.id,
+      });
 
       all.push(...completed.result.items);
       if (onPage) await onPage(completed.result.items);
@@ -332,7 +552,11 @@ export class TrueLayerApiClient {
     if (cursor) body.cursor = cursor;
 
     return this.dataRequest<TrueLayerTransactionsRequestResult>(
-      { method: 'post', url: `/v3/connected-accounts/${accountId}/transactions/requests`, data: body },
+      {
+        method: 'post',
+        url: `/v3/connected-accounts/${accountId}/transactions/requests`,
+        data: body,
+      },
       connectionId,
       'createTransactionsRequest',
     );
@@ -349,7 +573,10 @@ export class TrueLayerApiClient {
   }): Promise<TrueLayerTransactionsRequestCompleted> {
     for (let attempt = 0; attempt < TX_POLL_MAX_ATTEMPTS; attempt += 1) {
       const result = await this.dataRequest<TrueLayerTransactionsRequestResult>(
-        { method: 'get', url: `/v3/connected-accounts/${accountId}/transactions/requests/${requestId}` },
+        {
+          method: 'get',
+          url: `/v3/connected-accounts/${accountId}/transactions/requests/${requestId}`,
+        },
         connectionId,
         'getTransactionsRequest',
       );
@@ -361,7 +588,9 @@ export class TrueLayerApiClient {
           `[TrueLayerApiClient] transactions request ${requestId} failed: ${result.failure_reason ?? 'unknown'}`,
         );
         throw new ServiceUnavailableError({
-          message: t({ key: 'bankDataProviders.truelayer.transactionsRequestFailed' }),
+          message: t({
+            key: 'bankDataProviders.truelayer.transactionsRequestFailed',
+          }),
         });
       }
 
@@ -371,7 +600,9 @@ export class TrueLayerApiClient {
     }
 
     throw new ServiceUnavailableError({
-      message: t({ key: 'bankDataProviders.truelayer.transactionsRequestTimeout' }),
+      message: t({
+        key: 'bankDataProviders.truelayer.transactionsRequestTimeout',
+      }),
     });
   }
 
@@ -408,7 +639,7 @@ export class TrueLayerApiClient {
     if (axios.isAxiosError(error)) {
       const status = error.response?.status;
       const problem = (error.response?.data ?? {}) as TrueLayerProblemDetails;
-      const detail = problem.detail || problem.title;
+      const detail = problem.detail || problem.title || problem.error_description;
 
       logger.info(`[TrueLayerApiClient] ${method} failed: status=${status}, detail=${detail}`);
 
@@ -419,21 +650,39 @@ export class TrueLayerApiClient {
 
       if (status === 400 && isInvalidState(problem)) {
         if (tolerateInvalidState) return INVALID_STATE_SENTINEL;
-        return new ForbiddenError({ message: t({ key: 'bankDataProviders.truelayer.consentNotActive' }) });
+        return new ForbiddenError({
+          message: t({ key: 'bankDataProviders.truelayer.consentNotActive' }),
+        });
+      }
+
+      // v1 data calls answer 403 `access_denied` when the bearer's consent is
+      // gone — same "reconnect" treatment as v3's invalid_state.
+      if (status === 403 && problem.error === 'access_denied') {
+        return new ForbiddenError({
+          message: t({ key: 'bankDataProviders.truelayer.consentNotActive' }),
+        });
       }
 
       // TrueLayer refuses to start an authorization journey when this
       // instance's callback URL is not in the app's Redirect URIs list.
       if (status === 403 && method === 'createDataConnection') {
-        return new ForbiddenError({ message: t({ key: 'bankDataProviders.truelayer.redirectUriNotRegistered' }) });
+        return new ForbiddenError({
+          message: t({
+            key: 'bankDataProviders.truelayer.redirectUriNotRegistered',
+          }),
+        });
       }
 
       if (status === 401 || status === 403) {
-        return new ForbiddenError({ message: detail || t({ key: 'bankDataProviders.truelayer.invalidCredentials' }) });
+        return new ForbiddenError({
+          message: detail || t({ key: 'bankDataProviders.truelayer.invalidCredentials' }),
+        });
       }
 
       if (status === 404) {
-        return new NotFoundError({ message: detail || t({ key: 'bankDataProviders.truelayer.accountNotFound' }) });
+        return new NotFoundError({
+          message: detail || t({ key: 'bankDataProviders.truelayer.accountNotFound' }),
+        });
       }
 
       if (status === 429) {
@@ -452,7 +701,10 @@ export class TrueLayerApiClient {
         return new BadRequestError({
           message:
             detail ||
-            t({ key: 'bankDataProviders.apiError', variables: { provider: 'TrueLayer', message: error.message } }),
+            t({
+              key: 'bankDataProviders.apiError',
+              variables: { provider: 'TrueLayer', message: error.message },
+            }),
         });
       }
     }
@@ -477,16 +729,86 @@ export const toIsoDate = (date: Date): string => date.toISOString().slice(0, 10)
  */
 const fractionDigitsCache = new Map<string, number>();
 export const centsFromMinorUnits = (minor: number, currency: string): number => {
+  // cents = minor units × 10^(2 − minorDigits)
+  return Math.round(minor * 10 ** (2 - fractionDigits(currency)));
+};
+
+/** Decimal fraction digits for a currency (2 for GBP/EUR, 0 for JPY…). */
+const fractionDigits = (currency: string): number => {
   let digits = fractionDigitsCache.get(currency);
   if (digits === undefined) {
     try {
-      digits = new Intl.NumberFormat('en', { style: 'currency', currency }).resolvedOptions()
-        .maximumFractionDigits as number;
+      digits = new Intl.NumberFormat('en', {
+        style: 'currency',
+        currency,
+      }).resolvedOptions().maximumFractionDigits as number;
     } catch {
       digits = 2;
     }
     fractionDigitsCache.set(currency, digits);
   }
-  // cents = minor units × 10^(2 − minorDigits)
-  return Math.round(minor * 10 ** (2 - digits));
+  return digits;
+};
+
+/**
+ * v1 (Unified Data Model) reports amounts as DECIMAL MAJOR units where v3
+ * reports minor-unit integers — convert back so one shared mapping path serves
+ * both. Sign is preserved (negative = debit in both shapes).
+ */
+export const majorToMinorUnits = (major: number, currency: string): number =>
+  Math.round(major * 10 ** fractionDigits(currency));
+
+/** Scopes the v1 authorization link must carry for recurring sync. */
+const V1_SCOPE = 'info accounts balance transactions offline_access';
+
+/** Link-header page ceiling; TrueLayer v1 pages at 100 rows. */
+const V1_TX_MAX_PAGES = 200;
+
+/** UDM account types (CURRENT_ACCOUNT…) → v3 vocabulary (current…). */
+const normalizeV1AccountType = (raw?: string): string => {
+  if (!raw) return 'other';
+  const key = raw.toLowerCase().replace(/_account$/, '');
+  return ['current', 'savings', 'credit', 'cash', 'pension', 'mortgage', 'branch', 'other'].includes(key)
+    ? key
+    : 'other';
+};
+
+const v1AccountIdentifiers = (account: TrueLayerV1Account): TrueLayerApiAccount['account_identifiers'] => {
+  const number = account.account_number?.number?.replace(/[\s-]/g, '');
+  if (!number) return [];
+  const sortCode = account.account_number?.sort_code?.replace(/[\s-]/g, '');
+  return [
+    {
+      type: 'sort_code_account_number',
+      sort_code: sortCode ?? '',
+      account_number: number,
+    },
+  ];
+};
+
+const v1ToApiTransaction = (tx: TrueLayerV1Transaction): TrueLayerApiTransaction => ({
+  id: tx.normalised_provider_transaction_id || tx.provider_transaction_id || tx.transaction_id,
+  timestamp: tx.timestamp,
+  description: tx.description ?? '',
+  currency: tx.currency,
+  amount_in_minor: majorToMinorUnits(tx.amount, tx.currency),
+  // The UDM shape serves booked rows only; no status field.
+  status: 'settled',
+  enrichment: {
+    merchant_name: tx.merchant_name ?? null,
+    transaction_category: tx.transaction_category ?? null,
+  },
+});
+
+/** Extract the `rel="next"` target from a v1 Link header (absolute URL). */
+const parseLinkNextUrl = (link: unknown): string | undefined => {
+  if (typeof link !== 'string') return undefined;
+  for (const part of link.split(',')) {
+    const [href, ...params] = part.trim().split(';');
+    if (!href) continue;
+    if (params.some((p) => p.trim() === 'rel="next"' || p.trim() === 'rel=next')) {
+      return href.trim().replace(/^<|>$/g, '');
+    }
+  }
+  return undefined;
 };

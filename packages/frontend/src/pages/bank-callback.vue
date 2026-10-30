@@ -4,15 +4,21 @@
       <div v-if="isProcessing" class="text-center">
         <InfoIcon class="mx-auto mb-4 size-12" />
 
-        <h2 class="mb-2 text-xl font-semibold">{{ t('pages.bankCallback.processing.title') }}</h2>
+        <h2 class="mb-2 text-xl font-semibold">
+          {{ t('pages.bankCallback.processing.title') }}
+        </h2>
 
-        <p class="text-muted-foreground text-sm">{{ t('pages.bankCallback.processing.description') }}</p>
+        <p class="text-muted-foreground text-sm">
+          {{ t('pages.bankCallback.processing.description') }}
+        </p>
       </div>
 
       <div v-else-if="error" class="text-center">
         <InfoIcon class="text-destructive-text mx-auto mb-4 size-12" />
 
-        <h2 class="text-destructive-text mb-2 text-xl font-semibold">{{ t('pages.bankCallback.error.title') }}</h2>
+        <h2 class="text-destructive-text mb-2 text-xl font-semibold">
+          {{ t('pages.bankCallback.error.title') }}
+        </h2>
 
         <p class="text-muted-foreground mb-2 text-sm">{{ error }}</p>
         <p class="mb-6 text-sm">
@@ -29,9 +35,13 @@
       <div v-else-if="success" class="text-center">
         <CheckCircle2Icon class="text-success-text mx-auto mb-4 size-12" />
 
-        <h2 class="text-success-text mb-2 text-xl font-semibold">{{ t('pages.bankCallback.success.title') }}</h2>
+        <h2 class="text-success-text mb-2 text-xl font-semibold">
+          {{ t('pages.bankCallback.success.title') }}
+        </h2>
 
-        <p class="text-muted-foreground mb-6 text-sm">{{ t('pages.bankCallback.success.description') }}</p>
+        <p class="text-muted-foreground mb-6 text-sm">
+          {{ t('pages.bankCallback.success.description') }}
+        </p>
 
         <button
           @click="goToAccounts"
@@ -80,12 +90,14 @@ const TL_KEY = 'pendi…nId';
  * TrueLayer completes the consent at the bank just before redirecting back;
  * the Connection-Id may serve data a beat later, so retry the confirmation a
  * few times while the backend answers 503 (consent not active yet).
+ * v1 legacy journeys carry a real OAuth code/state which is exchanged server
+ * side; v3 ignores both.
  */
-const confirmTrueLayer = async (connectionId: string): Promise<void> => {
+const confirmTrueLayer = async (connectionId: string, oauth?: { code?: string; state?: string }): Promise<void> => {
   const attempts = 4;
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     try {
-      await completeTrueLayerAuthorization(connectionId);
+      await completeTrueLayerAuthorization(connectionId, oauth);
       return;
     } catch (err) {
       const stillPending = isApiErrorWithCode(err, API_ERROR_CODES.serviceUnavailable) && attempt < attempts - 1;
@@ -146,7 +158,7 @@ onMounted(async () => {
     // return (which may carry stray query params) is never misread as EB.
     const truelayerConnectionId = localStorage.getItem(TL_KEY);
     if (truelayerConnectionId) {
-      await confirmTrueLayer(truelayerConnectionId);
+      await confirmTrueLayer(truelayerConnectionId, { code, state });
       localStorage.removeItem(TL_KEY);
       await finalize(truelayerConnectionId);
       return;
