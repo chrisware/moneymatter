@@ -16,9 +16,9 @@ const mockJwt = (claims: Record<string, unknown>) =>
   ['eyJhbGciOiJSUzI1NiJ9', Buffer.from(JSON.stringify(claims)).toString('base64url'), 'mock-sig'].join('.');
 
 export const getMockedTrueLayerTokenResponse = ({ expiresIn = 900 }: { expiresIn?: number } = {}) => ({
-  // A properly provisioned Data app: decodable claims with connections access.
+  // A properly provisioned Data v3 app: decodable claims incl. `data`.
   access_token: mockJwt({
-    scope: ['accounts', 'balance', 'transactions', 'connections:create'],
+    scope: ['data', 'accounts', 'balance', 'transactions', 'connections:create'],
     aud: 'connections_api',
   }),
   token_type: 'Bearer',

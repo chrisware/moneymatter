@@ -159,7 +159,7 @@ describe('TrueLayer Data Provider E2E', () => {
       });
 
       expect(result.status).toEqual(ERROR_CODES.Forbidden);
-      expect(result.body?.response?.message).toContain('Data API product');
+      expect(result.body?.response?.message).toContain('Data product');
     });
 
     it('returns 503 from the callback while the bank-side consent is still pending', async () => {
