@@ -54,6 +54,14 @@ const isAuthorizedBearer = (request: Request): boolean =>
 const isV1AuthorizedBearer = (request: Request): boolean =>
   (request.headers.get('authorization') ?? '').startsWith('Bearer tl-v1-access-token');
 
+/** The live v1 API answers 400 "Invalid date range provided." when `from` is
+ * more than ~1 year in the past — banks never serve that much history. One
+ * day of slack so the provider's own 365-day default window passes. */
+const v1RangeTooWide = (request: Request): boolean => {
+  const from = new URL(request.url).searchParams.get('from');
+  return !!from && Date.now() - new Date(from).getTime() > 366 * 24 * 60 * 60 * 1000;
+};
+
 /**
  * Explicit one-off overrides for tests (registration order: these run before the defaults).
  */
@@ -291,6 +299,7 @@ export const trueLayerHandlers = [
 
   http.get(`${TL_API_BASE_URL}/data/v1/accounts/:accountId/transactions`, ({ request, params }) => {
     if (!isV1AuthorizedBearer(request)) return HttpResponse.json({ error: 'access_denied' }, { status: 403 });
+    if (v1RangeTooWide(request)) return problem(400, 'invalid_request', 'Invalid date range provided.');
     const accountId = String(params.accountId ?? '');
     if (accountId === TRUELAYER_V1_CARD_ID) return problem(400, 'invalid_request', 'not an account id');
     if (!(accountId in TRUELAYER_V1_BALANCES_MAJOR)) return problem(404, 'not_found', 'unknown account id');
@@ -312,6 +321,7 @@ export const trueLayerHandlers = [
 
   http.get(`${TL_API_BASE_URL}/data/v1/cards/:accountId/transactions`, ({ request, params }) => {
     if (!isV1AuthorizedBearer(request)) return HttpResponse.json({ error: 'access_denied' }, { status: 403 });
+    if (v1RangeTooWide(request)) return problem(400, 'invalid_request', 'Invalid date range provided.');
     const accountId = String(params.accountId ?? '');
     if (accountId !== TRUELAYER_V1_CARD_ID) return problem(404, 'not_found', 'unknown card id');
     return HttpResponse.json(getMockedTrueLayerV1TransactionsResponse(3, accountId));

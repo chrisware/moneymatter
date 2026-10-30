@@ -1,6 +1,7 @@
 import { BANK_PROVIDER_TYPE, DEACTIVATION_REASON, TRANSACTION_TYPES } from '@bt/shared/types';
 import { describe, expect, it } from '@jest/globals';
 import { ERROR_CODES } from '@js/errors';
+import Accounts from '@models/accounts.model';
 import BankDataProviderConnections from '@models/bank-data-provider-connections.model';
 import Transactions from '@models/transactions.model';
 import { bankProviderRegistry } from '@root/services/bank-data-providers';
@@ -813,6 +814,45 @@ describe('TrueLayer Data Provider E2E', () => {
         TRUELAYER_V1_ACCOUNT_1_ID,
         TRUELAYER_V1_ACCOUNT_2_ID,
       ]);
+    });
+
+    it('links a card product to an existing account with years of manual history', async () => {
+      const { connectionId } = await helpers.truelayer.pairTrueLayerUserV1();
+      global.mswMockServer.use(...getTrueLayerV1CardsOnlyMock());
+      await helpers.addUserCurrencies({ currencyCodes: ['GBP'], raw: true });
+
+      const existing = await helpers.createAccount({
+        payload: helpers.buildAccountPayload({ name: 'Deep history GBP', currencyCode: 'GBP' }),
+        raw: true,
+      });
+      await helpers.createTransaction({
+        payload: helpers.buildTransactionPayload({
+          accountId: existing.id,
+          amount: 25,
+          transactionType: TRANSACTION_TYPES.expense,
+          time: '2020-02-08T23:00:00.000Z',
+        }),
+        raw: true,
+      });
+
+      // Regression: the pre-clamp fetch anchored at the oldest stored row
+      // (2020 − 7d overlap), a window the live API rejects with 400 "Invalid
+      // date range provided." Now the linkedAt clamp keeps the fetch
+      // forward-only (pre-link rows belong to the residual absorb, not the
+      // statement import), so the link succeeds and imports nothing dated
+      // before the link.
+      await helpers.makeRequest({
+        method: 'post',
+        url: `/accounts/${existing.id}/link`,
+        payload: { connectionId, externalAccountId: TRUELAYER_V1_CARD_ID },
+        raw: true,
+      });
+
+      const linked = await Accounts.findByPk(existing.id);
+      expect(linked!.externalId).toBe(TRUELAYER_V1_CARD_ID);
+      const rows = await Transactions.findAll({ where: { accountId: existing.id } });
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.amount.toNumber()).toBe(25);
     });
 
     it('imports signed major-unit amounts mapped to income/expense', async () => {
