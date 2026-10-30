@@ -299,6 +299,12 @@
         "backInReach": "Back within reach",
         "offTrack": "Off track"
       }
+    },
+    "pasteImage": {
+      "button": "Paste image",
+      "shortcutHint": "or press {shortcut}",
+      "noImage": "No image found in the clipboard.",
+      "readFailed": "Couldn't read the clipboard. Allow clipboard access or paste with the keyboard shortcut."
     }
   },
   "accountGroups": {
