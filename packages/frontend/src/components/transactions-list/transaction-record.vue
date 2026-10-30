@@ -122,7 +122,13 @@
               {{ accountFrom?.name }}
             </span>
             <ArrowRight :size="14" :class="['shrink-0 opacity-60', linkTarget.flowsToAccount && 'rotate-180']" />
-            <component :is="linkTarget.icon" :size="14" class="text-app-transfer-color shrink-0" />
+            <BrandLogo
+              v-if="linkTarget.logoSelection"
+              v-bind="toLogoDisplayProps({ selection: linkTarget.logoSelection })"
+              :name="linkTarget.name"
+              class="size-5 shrink-0"
+            />
+            <component :is="linkTarget.icon" v-else :size="14" class="text-app-transfer-color shrink-0" />
             <div v-if="linkTarget.isLoading" class="h-4 w-16 animate-pulse rounded bg-white/10" />
             <template v-else>
               <span
@@ -290,6 +296,8 @@
 
 <script lang="ts" setup>
 import AccountLogo from '@/components/common/account-logo.vue';
+import BrandLogo from '@/components/common/brand-logo.vue';
+import { toLogoDisplayProps, toLogoSelection } from '@/components/common/logo-selection';
 import CategoryCircle from '@/components/common/category-circle.vue';
 import DeletedBadge from '@/components/common/deleted-badge.vue';
 import ResponsiveTooltip from '@/components/common/responsive-tooltip.vue';
@@ -417,6 +425,7 @@ const linkTarget = computed(() => {
   if (isPortfolioLinked.value) {
     return {
       icon: BriefcaseIcon,
+      logoSelection: toLogoSelection(portfolioLinkData.value ?? {}),
       name: portfolioName.value,
       isDeleted: isPortfolioDeleted.value,
       isLoading: isLoadingPortfolioLink.value,
@@ -426,6 +435,7 @@ const linkTarget = computed(() => {
   if (transaction.value.transferNature === TRANSACTION_TRANSFER_NATURE.transfer_to_venture) {
     return {
       icon: RocketIcon,
+      logoSelection: toLogoSelection(ventureLinkData.value ?? {}),
       name: ventureLinkData.value?.dealName ?? '',
       isDeleted: ventureLinkData.value?.isDealDeleted ?? false,
       isLoading: isLoadingVentureLink.value,
