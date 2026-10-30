@@ -51,20 +51,20 @@ interface CachedToken {
 const tokenCache = new Map<string, CachedToken>();
 
 /**
- * Does this access token carry TrueLayer Data v3 access? Provisioned apps get
- * `connections:create` in scope / `connections_api` in the audience (and v3
- * apps the literal `data` scope). Tokens we can't decode (opaque mocks) are
- * assumed provisioned so the more common redirect-URI hint wins.
+ * Does this access token carry TrueLayer Data API v3 access? The docs are
+ * explicit: v3 requests need the literal `data` scope in the token. Legacy
+ * apps with granular v1 scopes (accounts/transactions/connections:create)
+ * are NOT v3-provisioned and get 403 on POST /v3/data-connections. Tokens we
+ * can't decode (opaque mocks) are assumed provisioned so the more common
+ * redirect-URI hint wins.
  */
 function tokenGrantsDataAccess(jwt: string): boolean {
   try {
     const payload = JSON.parse(Buffer.from(jwt.split('.')[1] ?? '', 'base64url').toString('utf8')) as {
       scope?: string | string[];
-      aud?: string | string[];
     };
     const scope = Array.isArray(payload.scope) ? payload.scope.join(' ') : (payload.scope ?? '');
-    const aud = Array.isArray(payload.aud) ? payload.aud.join(' ') : (payload.aud ?? '');
-    return scope.includes('data') || scope.includes('connections:create') || aud.includes('connections_api');
+    return /\bdata\b/.test(scope);
   } catch {
     return true;
   }
@@ -129,9 +129,9 @@ export class TrueLayerApiClient {
   private async fetchAccessToken(): Promise<string> {
     try {
       // No scope parameter: the token carries the app's full dashboard-
-      // configured scope set (v3-capable apps include connections:create /
-      // connections_api there; the literal `data` scope name doesn't exist
-      // on the auth server for every app).
+      // configured scope set. Apps provisioned for Data v3 include the
+      // literal `data` scope there; the 403 discriminator in
+      // createDataConnection checks for it.
       const response = await this.auth.post<TrueLayerApiAccessTokenResponse>('/connect/token', {
         grant_type: 'client_credentials',
         client_id: this.credentials.clientId,
