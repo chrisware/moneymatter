@@ -38,8 +38,16 @@ import { writeBankBalanceWithHistory } from '../utils/write-bank-balance-with-hi
 import { centsFromMinorUnits, TrueLayerApiClient } from './api-client';
 import type { TrueLayerApiAccount, TrueLayerApiTransaction, TrueLayerCredentials, TrueLayerMetadata } from './types';
 
-/** The callback page the TrueLayer hosted journey returns the user to. */
-const getRedirectUrl = () => process.env.TRUELAYER_REDIRECT_URL || `${FRONTEND_BASE_URL}/bank-callback`;
+/**
+ * The callback page the TrueLayer hosted journey returns the user to.
+ * TrueLayer's Console-provided demo redirect page is valid HTTPS and accepted
+ * out of the box, used when the instance URL isn't a registered Redirect URI.
+ */
+const CONSOLE_REDIRECT_PAGE_URL = 'https://console.truelayer.com/redirect-page';
+
+const getRedirectUrl = (manualReturn = false) =>
+  process.env.TRUELAYER_REDIRECT_URL ||
+  (manualReturn ? CONSOLE_REDIRECT_PAGE_URL : `${FRONTEND_BASE_URL}/bank-callback`);
 
 /**
  * UK Open Banking recurring consents are granted for 180 days (TrueLayer's
@@ -128,7 +136,8 @@ export class TrueLayerProvider extends BaseBankDataProvider {
     }
 
     const endUser = await this.getEndUser(userId);
-    const created = await apiClient.createDataConnection({ returnUri: getRedirectUrl(), user: endUser });
+    const manualReturn = credentials.manualReturn === true;
+    const created = await apiClient.createDataConnection({ returnUri: getRedirectUrl(manualReturn), user: endUser });
     if (!created.hosted_page?.uri) {
       throw new BadRequestError({ message: t({ key: 'bankDataProviders.truelayer.noAuthUrl' }) });
     }
@@ -154,6 +163,7 @@ export class TrueLayerProvider extends BaseBankDataProvider {
         tlPendingConnectionId: created.id,
         tlUserId: created.user?.id ?? null,
         authUrl: created.hosted_page.uri,
+        manualReturn,
         accountCount: 0,
         consecutiveAuthFailures: 0,
         deactivationReason: null,
@@ -251,7 +261,7 @@ export class TrueLayerProvider extends BaseBankDataProvider {
     const apiClient = new TrueLayerApiClient(credentials);
     const endUser = await this.getEndUser(connection.userId);
     const created = await apiClient.createDataConnection({
-      returnUri: getRedirectUrl(),
+      returnUri: getRedirectUrl(metadata.manualReturn === true),
       user: endUser,
       tlUserId: metadata.tlUserId,
     });

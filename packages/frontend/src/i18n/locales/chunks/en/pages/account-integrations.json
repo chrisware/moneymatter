@@ -347,6 +347,16 @@
         "continueTitle": "Continue to TrueLayer",
         "continueDescription": "You'll be redirected to TrueLayer to pick your bank and approve the connection. After consenting, you'll return here automatically.",
         "continueButton": "Continue to TrueLayer",
+        "returnModeLabel": "Authorization return method",
+        "returnModeAuto": "Automatic redirect",
+        "returnModeManual": "Manual confirmation",
+        "returnModeAutoHint": "TrueLayer sends you back to this app automatically. Requires your callback URL ({url}) to be registered in the TrueLayer Console.",
+        "returnModeManualHint": "No Console setup needed: TrueLayer ends the journey on its own confirmation page, and you confirm back here.",
+        "openAuthTabButton": "Open authorization page",
+        "confirmAuthButton": "I've completed authorization",
+        "confirmingButton": "Confirming...",
+        "manualReturnDescription": "Authorize with your bank in the tab that opens. When TrueLayer shows its confirmation page, come back here and click \"I've completed authorization\".",
+        "manualReturnConfirmed": "Bank connection authorized",
         "errors": {
           "connectFailed": "Failed to connect to TrueLayer",
           "noAuthUrl": "TrueLayer did not return an authorization URL — check your credentials and try again"
@@ -390,6 +400,13 @@
           "daysCount": "{count} day | {count} days",
           "notAvailable": "N/A",
           "reconnectButton": "Reconnect now"
+        },
+        "manualAuth": {
+          "description": "Bank authorization is still pending. Finish it on TrueLayer's page, then confirm here.",
+          "openButton": "Open authorization page",
+          "confirmButton": "I've completed authorization",
+          "confirmed": "Bank connection authorized",
+          "confirmFailed": "Couldn't confirm the authorization yet"
         },
         "connectedAccounts": {
           "title": "Connected accounts",

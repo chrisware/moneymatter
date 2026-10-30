@@ -51,11 +51,30 @@ interface CachedToken {
 const tokenCache = new Map<string, CachedToken>();
 
 /**
+ * Does this access token carry TrueLayer Data v3 access? Provisioned apps get
+ * `connections:create` in scope / `connections_api` in the audience (and v3
+ * apps the literal `data` scope). Tokens we can't decode (opaque mocks) are
+ * assumed provisioned so the more common redirect-URI hint wins.
+ */
+function tokenGrantsDataAccess(jwt: string): boolean {
+  try {
+    const payload = JSON.parse(Buffer.from(jwt.split('.')[1] ?? '', 'base64url').toString('utf8')) as {
+      scope?: string | string[];
+      aud?: string | string[];
+    };
+    const scope = Array.isArray(payload.scope) ? payload.scope.join(' ') : (payload.scope ?? '');
+    const aud = Array.isArray(payload.aud) ? payload.aud.join(' ') : (payload.aud ?? '');
+    return scope.includes('data') || scope.includes('connections:create') || aud.includes('connections_api');
+  } catch {
+    return true;
+  }
+}
+
+/**
  * TrueLayer Data API v3 client.
  *
- * Auth model: POST /connect/token (grant_type=client_credentials, no scope —
- * the token then carries the app's dashboard-configured data scopes) for a
- * short-lived bearer, cached per app; every data call adds
+ * Auth model: POST /connect/token (grant_type=client_credentials, scope `data`)
+ * for a short-lived bearer, cached per app; every data call adds
  * `Connection-Id` identifying the user's authorized data connection.
  *
  * Docs: https://docs.truelayer.com/reference/welcome-api-reference
@@ -109,6 +128,10 @@ export class TrueLayerApiClient {
 
   private async fetchAccessToken(): Promise<string> {
     try {
+      // No scope parameter: the token carries the app's full dashboard-
+      // configured scope set (v3-capable apps include connections:create /
+      // connections_api there; the literal `data` scope name doesn't exist
+      // on the auth server for every app).
       const response = await this.auth.post<TrueLayerApiAccessTokenResponse>('/connect/token', {
         grant_type: 'client_credentials',
         client_id: this.credentials.clientId,
@@ -183,6 +206,13 @@ export class TrueLayerApiClient {
       );
       return response.data;
     } catch (error) {
+      // A 403 here has two distinct causes the user can act on: the app isn't
+      // provisioned for Data v3 (token lacks connections access) or the
+      // return URI isn't registered in Console. Decode the bearer's claims to
+      // tell them apart.
+      if (axios.isAxiosError(error) && error.response?.status === 403 && !tokenGrantsDataAccess(token)) {
+        throw new ForbiddenError({ message: t({ key: 'bankDataProviders.truelayer.dataProductNotEnabled' }) });
+      }
       throw this.handleApiError(error, 'createDataConnection');
     }
   }

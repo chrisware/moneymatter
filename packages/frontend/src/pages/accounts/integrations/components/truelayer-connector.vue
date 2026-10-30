@@ -38,6 +38,22 @@
               {{ t('pages.integrations.trueLayerConnector.environmentHint') }}
             </div>
           </div>
+          <div>
+            <SelectField
+              :model-value="selectedReturnMode"
+              :values="returnModeOptions"
+              value-key="value"
+              :label="t('pages.integrations.trueLayerConnector.returnModeLabel')"
+              @update:model-value="(value) => (returnMode = value ? value.value : 'auto')"
+            />
+            <div class="text-muted-foreground mt-1 text-xs">
+              {{
+                returnMode === 'manual'
+                  ? t('pages.integrations.trueLayerConnector.returnModeManualHint')
+                  : t('pages.integrations.trueLayerConnector.returnModeAutoHint', { url: callbackUrl || '' })
+              }}
+            </div>
+          </div>
 
           <CredentialsHelpTrigger
             :label="t('pages.integrations.trueLayerConnector.help.trigger')"
@@ -68,12 +84,29 @@
         <div class="space-y-2">
           <div class="font-medium">{{ t('pages.integrations.trueLayerConnector.continueTitle') }}</div>
           <p class="text-muted-foreground text-sm">
-            {{ t('pages.integrations.trueLayerConnector.continueDescription') }}
+            {{
+              isManualReturn
+                ? t('pages.integrations.trueLayerConnector.manualReturnDescription')
+                : t('pages.integrations.trueLayerConnector.continueDescription')
+            }}
           </p>
         </div>
 
-        <div class="flex gap-2 pt-4">
-          <UiButton @click="openAuthUrl">{{ t('pages.integrations.trueLayerConnector.continueButton') }}</UiButton>
+        <div class="flex flex-wrap gap-2 pt-4">
+          <UiButton @click="openAuthUrl">
+            {{
+              isManualReturn
+                ? t('pages.integrations.trueLayerConnector.openAuthTabButton')
+                : t('pages.integrations.trueLayerConnector.continueButton')
+            }}
+          </UiButton>
+          <UiButton v-if="isManualReturn" :disabled="isLoading" @click="handleManualConfirm">
+            {{
+              isLoading
+                ? t('pages.integrations.trueLayerConnector.confirmingButton')
+                : t('pages.integrations.trueLayerConnector.confirmAuthButton')
+            }}
+          </UiButton>
           <UiButton variant="outline" @click="currentStep = 1" :disabled="isLoading">
             {{ t('pages.integrations.trueLayerConnector.backButton') }}
           </UiButton>
@@ -109,7 +142,12 @@
 </template>
 
 <script lang="ts" setup>
-import { type BankProvider, connectProvider, listProviders } from '@/api/bank-data-providers';
+import {
+  type BankProvider,
+  completeTrueLayerAuthorization,
+  connectProvider,
+  listProviders,
+} from '@/api/bank-data-providers';
 import { VUE_QUERY_CACHE_KEYS } from '@/common/const';
 import ClickToCopy from '@/components/common/click-to-copy.vue';
 import { DemoRestricted } from '@/components/demo';
@@ -134,14 +172,15 @@ const TRUELAYER_CONSOLE_URL = 'https://console.truelayer.com';
 
 const { t } = useI18n();
 
-// `connected` completes on the OAuth callback page after the redirect; it is
-// declared here so the dialog wiring matches the sibling connectors.
-defineEmits<{
+// `connected` completes on the OAuth callback page after the redirect, or on
+// the manual "authorization completed" confirmation; it is declared here so the
+// dialog wiring matches the sibling connectors.
+const emit = defineEmits<{
   connected: [];
   cancel: [];
 }>();
 
-const { addErrorNotification } = useNotificationCenter();
+const { addErrorNotification, addSuccessNotification } = useNotificationCenter();
 const { isDemo } = storeToRefs(useUserStore());
 
 const currentStep = ref(1);
@@ -165,6 +204,27 @@ const selectedEnvironment = computed(
   () => environmentOptions.value.find((item) => item.value === environment.value) ?? null,
 );
 
+// How the hosted journey returns the user. "manual" ends on TrueLayer's
+// console redirect page (valid HTTPS, works for self-hosters without a
+// registered Redirect URI); the user then confirms from this dialog.
+type TrueLayerReturnMode = 'auto' | 'manual';
+const isLocalOrigin = ['localhost', '127.0.0.1', '0.0.0.0'].includes(window.location.hostname);
+const returnMode = ref<TrueLayerReturnMode>(
+  window.location.protocol === 'https:' && !isLocalOrigin ? 'auto' : 'manual',
+);
+
+const returnModeOptions = computed(() => [
+  {
+    value: 'auto' as TrueLayerReturnMode,
+    label: t('pages.integrations.trueLayerConnector.returnModeAuto'),
+  },
+  { value: 'manual' as TrueLayerReturnMode, label: t('pages.integrations.trueLayerConnector.returnModeManual') },
+]);
+const selectedReturnMode = computed(
+  () => returnModeOptions.value.find((item) => item.value === returnMode.value) ?? null,
+);
+const isManualReturn = computed(() => returnMode.value === 'manual');
+
 // connect creates a fresh connection each time, so a retry with unchanged credentials
 // must reuse the connection (and its authUrl) claimed by the first attempt instead of
 // creating a duplicate one.
@@ -172,6 +232,7 @@ const claimed = ref<{
   clientId: string;
   clientSecret: string;
   environment: TrueLayerEnvironment;
+  returnMode: TrueLayerReturnMode;
   connectionId: string;
   authUrl: string;
 } | null>(null);
@@ -201,12 +262,14 @@ const handleConnectProvider = async () => {
       !claimed.value ||
       claimed.value.clientId !== id ||
       claimed.value.clientSecret !== secret ||
-      claimed.value.environment !== environment.value
+      claimed.value.environment !== environment.value ||
+      claimed.value.returnMode !== returnMode.value
     ) {
       const response = await connectProvider(BANK_PROVIDER_TYPE.TRUELAYER, {
         clientId: id,
         clientSecret: secret,
         environment: environment.value,
+        manualReturn: returnMode.value === 'manual',
       });
       if (!response.authUrl) {
         addErrorNotification(t('pages.integrations.trueLayerConnector.errors.noAuthUrl'));
@@ -216,11 +279,14 @@ const handleConnectProvider = async () => {
         clientId: id,
         clientSecret: secret,
         environment: environment.value,
+        returnMode: returnMode.value,
         connectionId: response.connectionId,
         authUrl: response.authUrl,
       };
-      // Store connection ID for the OAuth callback page.
-      localStorage.setItem('pendingTrueLayerConnectionId', String(response.connectionId));
+      // Store connection ID for the OAuth callback page (auto return only).
+      if (returnMode.value === 'auto') {
+        localStorage.setItem('pendingTrueLayerConnectionId', String(response.connectionId));
+      }
     }
 
     currentStep.value = 2;
@@ -233,8 +299,29 @@ const handleConnectProvider = async () => {
 };
 
 const openAuthUrl = () => {
-  if (claimed.value?.authUrl) {
-    window.location.href = claimed.value.authUrl;
+  if (!claimed.value?.authUrl) return;
+  if (returnMode.value === 'manual') {
+    // Keep MoneyMatter open: the user authorizes in the new tab (TrueLayer's
+    // console redirect page) and returns here to confirm.
+    window.open(claimed.value.authUrl, '_blank', 'noopener');
+    return;
+  }
+  window.location.href = claimed.value.authUrl;
+};
+
+const handleManualConfirm = async () => {
+  if (!claimed.value || isLoading.value) return;
+  try {
+    isLoading.value = true;
+    await completeTrueLayerAuthorization(claimed.value.connectionId);
+    addSuccessNotification(t('pages.integrations.trueLayerConnector.manualReturnConfirmed'));
+    emit('connected');
+  } catch (error) {
+    // While the bank journey is still open/pending the backend answers with
+    // its "authorizationPending" message; surface it verbatim.
+    addErrorNotification(getErrorMessage(error) || t('pages.integrations.trueLayerConnector.errors.connectFailed'));
+  } finally {
+    isLoading.value = false;
   }
 };
 

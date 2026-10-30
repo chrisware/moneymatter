@@ -23,6 +23,7 @@ import {
   VALID_TL_CLIENT_ID,
   VALID_TL_CLIENT_SECRET,
   getTrueLayerAccountsMock,
+  getTrueLayerPaymentsOnlyTokenMock,
   getTrueLayerPendingAccountsMock,
   getTrueLayerTransactionsRequestErrorMock,
   getTrueLayerTransactionsResultMock,
@@ -60,6 +61,40 @@ describe('TrueLayer Data Provider E2E', () => {
 
       const { connection } = await helpers.bankDataProviders.getConnectionDetails({ connectionId, raw: true });
       expect(connection.isActive).toBe(false);
+    });
+
+    it('routes manual-return journeys to the TrueLayer console redirect page', async () => {
+      const returnUris: string[] = [];
+      global.mswMockServer.use(
+        http.post(`${TL_API_BASE_URL}/v3/data-connections`, async ({ request }) => {
+          // msw hands back unknown JSON; only the return URI matters here.
+          const body = (await request.json().catch(() => null)) as {
+            hosted_page?: { return_uri?: string };
+          } | null;
+          returnUris.push(body?.hosted_page?.return_uri ?? '');
+          return HttpResponse.json(getMockedTrueLayerCreateConnectionResponse(), { status: 201 });
+        }),
+      );
+
+      const { connectionId } = await helpers.bankDataProviders.connectProvider({
+        providerType: BANK_PROVIDER_TYPE.TRUELAYER,
+        credentials: { clientId: VALID_TL_CLIENT_ID, clientSecret: VALID_TL_CLIENT_SECRET, manualReturn: true },
+        raw: true,
+      });
+
+      expect(returnUris[0]).toBe('https://console.truelayer.com/redirect-page');
+
+      const { connection } = await helpers.bankDataProviders.getConnectionDetails({ connectionId, raw: true });
+      expect(connection?.manualReturn).toBe(true);
+      expect(typeof connection?.authUrl).toBe('string');
+
+      // A later reconnect keeps the manual return mode.
+      const reauthResult = await helpers.makeRequest({
+        method: 'post',
+        url: `/bank-data-providers/connections/${connectionId}/reauthorize`,
+      });
+      expect(reauthResult.status).toEqual(200);
+      expect(returnUris[1]).toBe('https://console.truelayer.com/redirect-page');
     });
 
     it('rejects invalid app credentials with Forbidden and creates no connection', async () => {
@@ -105,6 +140,26 @@ describe('TrueLayer Data Provider E2E', () => {
 
       expect(result.status).toEqual(ERROR_CODES.Forbidden);
       expect(result.body?.response?.message).toContain('Redirect URIs');
+    });
+
+    it('surfaces an app without the Data product distinctly', async () => {
+      // Payments-only token + 403 on the connection POST: the client must
+      // blame the missing Data product, not the redirect URI.
+      global.mswMockServer.use(
+        getTrueLayerPaymentsOnlyTokenMock(),
+        http.post(`${TL_API_BASE_URL}/v3/data-connections`, () =>
+          HttpResponse.json({ type: 'forbidden', title: 'Forbidden', status: 403 }, { status: 403 }),
+        ),
+      );
+
+      const result = await helpers.makeRequest<{ message?: string }>({
+        method: 'post',
+        url: `/bank-data-providers/${BANK_PROVIDER_TYPE.TRUELAYER}/connect`,
+        payload: { credentials: { clientId: 'payments-only-app-id', clientSecret: VALID_TL_CLIENT_SECRET } },
+      });
+
+      expect(result.status).toEqual(ERROR_CODES.Forbidden);
+      expect(result.body?.response?.message).toContain('Data API product');
     });
 
     it('returns 503 from the callback while the bank-side consent is still pending', async () => {
