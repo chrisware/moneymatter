@@ -5,6 +5,7 @@ import {
   TRUELAYER_BALANCES_MINOR,
   TRUELAYER_CONNECTION_ID,
   TRUELAYER_V1_BALANCES_MAJOR,
+  TRUELAYER_V1_CARD_ID,
   getMockedTrueLayerAccountsResponse,
   getMockedTrueLayerBalanceResponse,
   getMockedTrueLayerCreateConnectionResponse,
@@ -14,6 +15,7 @@ import {
   getMockedTrueLayerTransactionsResultResponse,
   getMockedTrueLayerV1BalanceResponse,
   getMockedTrueLayerV1AccountsResponse,
+  getMockedTrueLayerV1CardsResponse,
   getMockedTrueLayerV1TokenResponse,
   getMockedTrueLayerV1TransactionsResponse,
 } from './data';
@@ -281,14 +283,50 @@ export const trueLayerHandlers = [
   http.get(`${TL_API_BASE_URL}/data/v1/accounts/:accountId/balance`, ({ request, params }) => {
     if (!isV1AuthorizedBearer(request)) return HttpResponse.json({ error: 'access_denied' }, { status: 403 });
     const accountId = String(params.accountId ?? '');
-    if (!(accountId in TRUELAYER_V1_BALANCES_MAJOR)) return problem(404, 'not_found', 'unknown account id');
+    // Card products are served under /data/v1/cards only.
+    if (!(accountId in TRUELAYER_V1_BALANCES_MAJOR) || accountId === TRUELAYER_V1_CARD_ID) {
+      return problem(404, 'not_found', 'unknown account id');
+    }
     return HttpResponse.json(getMockedTrueLayerV1BalanceResponse(accountId));
   }),
 
   http.get(`${TL_API_BASE_URL}/data/v1/accounts/:accountId/transactions`, ({ request, params }) => {
     if (!isV1AuthorizedBearer(request)) return HttpResponse.json({ error: 'access_denied' }, { status: 403 });
     const accountId = String(params.accountId ?? '');
-    if (!(accountId in TRUELAYER_V1_BALANCES_MAJOR)) return problem(404, 'not_found', 'unknown account id');
+    if (!(accountId in TRUELAYER_V1_BALANCES_MAJOR) || accountId === TRUELAYER_V1_CARD_ID) {
+      return problem(404, 'not_found', 'unknown account id');
+    }
     return HttpResponse.json(getMockedTrueLayerV1TransactionsResponse(5, accountId));
+  }),
+
+  // Card-only providers answer 501 on /data/v1/accounts; the default mirrors a
+  // current-account bank (HSBC-like) where cards are simply not served.
+  http.get(`${TL_API_BASE_URL}/data/v1/cards`, () =>
+    HttpResponse.json({ error: 'not_supported', message: 'Feature not supported by the provider' }, { status: 501 }),
+  ),
+
+  http.get(`${TL_API_BASE_URL}/data/v1/cards/:accountId/balance`, ({ request, params }) => {
+    if (!isV1AuthorizedBearer(request)) return HttpResponse.json({ error: 'access_denied' }, { status: 403 });
+    const accountId = String(params.accountId ?? '');
+    if (accountId !== TRUELAYER_V1_CARD_ID) return problem(404, 'not_found', 'unknown card id');
+    return HttpResponse.json(getMockedTrueLayerV1BalanceResponse(accountId));
+  }),
+
+  http.get(`${TL_API_BASE_URL}/data/v1/cards/:accountId/transactions`, ({ request, params }) => {
+    if (!isV1AuthorizedBearer(request)) return HttpResponse.json({ error: 'access_denied' }, { status: 403 });
+    const accountId = String(params.accountId ?? '');
+    if (accountId !== TRUELAYER_V1_CARD_ID) return problem(404, 'not_found', 'unknown card id');
+    return HttpResponse.json(getMockedTrueLayerV1TransactionsResponse(3, accountId));
+  }),
+];
+
+/** Amex-like provider: no accounts API, everything on /data/v1/cards. */
+export const getTrueLayerV1CardsOnlyMock = () => [
+  http.get(`${TL_API_BASE_URL}/data/v1/accounts`, () =>
+    HttpResponse.json({ error: 'not_supported', message: 'Feature not supported by the provider' }, { status: 501 }),
+  ),
+  http.get(`${TL_API_BASE_URL}/data/v1/cards`, ({ request }) => {
+    if (!isV1AuthorizedBearer(request)) return HttpResponse.json({ error: 'access_denied' }, { status: 403 });
+    return HttpResponse.json(getMockedTrueLayerV1CardsResponse());
   }),
 ];

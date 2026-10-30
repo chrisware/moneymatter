@@ -313,33 +313,48 @@ export class TrueLayerApiClient {
     }
   }
 
-  /** GET /data/v1/accounts (user bearer) — mapped into the shared v3-shaped account. */
+  /**
+   * GET /data/v1/accounts + GET /data/v1/cards — merged into the shared
+   * v3-shaped list. Card-only providers (Amex) answer 501 on /accounts, and
+   * account-only providers 404/501 on /cards; an endpoint failing that way is
+   * ignored, but a rejected consent (403) or both endpoints failing throws.
+   */
   async v1GetAccounts(userToken: string): Promise<TrueLayerApiAccount[]> {
-    const data = await this.v1Request<TrueLayerV1AccountsResponse>(
-      { method: 'get', url: '/data/v1/accounts' },
-      userToken,
-      'v1GetAccounts',
-    );
-    return (data.results ?? []).map((account) => ({
-      id: account.account_id,
-      type: 'account' as const,
-      currency: account.currency,
-      account_type: normalizeV1AccountType(account.account_type),
-      account_identifiers: v1AccountIdentifiers(account),
-      account_holder_names: account.display_name ? [account.display_name] : [],
-      bic: null,
-      customer_segment: 'retail' as const,
-    }));
+    const [accounts, cards] = await Promise.all([
+      this.v1TryGet<TrueLayerV1AccountsResponse>(userToken, '/data/v1/accounts', 'v1GetAccounts'),
+      this.v1TryGet<TrueLayerV1AccountsResponse>(userToken, '/data/v1/cards', 'v1GetCards'),
+    ]);
+
+    if (!accounts.ok && !cards.ok) throw accounts.error ?? cards.error;
+    if (!accounts.ok && !accounts.unsupported) throw accounts.error;
+    if (!cards.ok && !cards.unsupported) throw cards.error;
+
+    const rows: TrueLayerApiAccount[] = [];
+    if (accounts.ok) rows.push(...(accounts.data.results ?? []).map((row) => v1ProductToApiAccount(row, 'accounts')));
+    if (cards.ok) rows.push(...(cards.data.results ?? []).map((row) => v1ProductToApiAccount(row, 'cards')));
+    return rows;
   }
 
-  /** GET /data/v1/accounts/{id}/balance — UDM reports DECIMAL MAJOR units; convert to minor. */
+  /** GET /data/v1/{kind}/{id}/balance — UDM reports DECIMAL MAJOR units; convert to minor. */
   async v1GetAccountBalance(userToken: string, accountId: string): Promise<TrueLayerApiBalanceResponse> {
-    const data = await this.v1Request<TrueLayerV1BalancesResponse>(
-      { method: 'get', url: `/data/v1/accounts/${accountId}/balance` },
+    // Cards are addressed under /data/v1/cards; the id alone doesn't say which,
+    // so a miss on the accounts path retries the cards path.
+    let data = await this.v1TryGet<TrueLayerV1BalancesResponse>(
       userToken,
+      `/data/v1/accounts/${accountId}/balance`,
       'v1GetAccountBalance',
     );
-    const balance: TrueLayerV1Balance | undefined = data.results?.[0];
+    if (!data.ok && data.unsupported) {
+      data = await this.v1TryGet<TrueLayerV1BalancesResponse>(
+        userToken,
+        `/data/v1/cards/${accountId}/balance`,
+        'v1GetCardBalance',
+      );
+      if (!data.ok) throw data.error;
+    }
+    if (!data.ok) throw data.error;
+
+    const balance: TrueLayerV1Balance | undefined = data.data.results?.[0];
     return {
       currency: balance?.currency ?? '',
       current_balance_in_minor: majorToMinorUnits(balance?.current ?? 0, balance?.currency ?? 'GBP'),
@@ -351,10 +366,11 @@ export class TrueLayerApiClient {
   }
 
   /**
-   * GET /data/v1/accounts/{id}/transactions — signed major-unit amounts, no
+   * GET /data/v1/{kind}/{id}/transactions — signed major-unit amounts, no
    * status field (pending rows live on a separate endpoint this policy does
    * not consume), RFC 3339 dates. Pages are followed via the `Link: <…>; rel="next"` header, with a hard
-   * ceiling so a bad cursor loop can't hang a sync.
+   * ceiling so a bad cursor loop can't hang a sync. Like balance, a 404/501 on
+   * the accounts path re-runs the whole loop against cards.
    */
   async v1GetTransactions({
     userToken,
@@ -369,9 +385,26 @@ export class TrueLayerApiClient {
     to: Date;
     onPage?: (transactions: TrueLayerApiTransaction[]) => void | Promise<void>;
   }): Promise<TrueLayerApiTransaction[]> {
+    const range = `from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}`;
+    try {
+      return await this.v1GetTransactionsPaged(
+        userToken,
+        `/data/v1/accounts/${accountId}/transactions?${range}`,
+        onPage,
+      );
+    } catch (error) {
+      if (!isV1UnsupportedPath(error)) throw error;
+      return await this.v1GetTransactionsPaged(userToken, `/data/v1/cards/${accountId}/transactions?${range}`, onPage);
+    }
+  }
+
+  private async v1GetTransactionsPaged(
+    userToken: string,
+    firstUrl: string,
+    onPage?: (transactions: TrueLayerApiTransaction[]) => void | Promise<void>,
+  ): Promise<TrueLayerApiTransaction[]> {
     const all: TrueLayerApiTransaction[] = [];
-    let url: string | undefined =
-      `/data/v1/accounts/${accountId}/transactions?from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}`;
+    let url: string | undefined = firstUrl;
 
     for (let page = 0; page < V1_TX_MAX_PAGES && url; page += 1) {
       const response = await this.api.get<TrueLayerV1TransactionsResponse>(url, {
@@ -386,22 +419,20 @@ export class TrueLayerApiClient {
     return all;
   }
 
-  private async v1Request<T>(
-    config: Parameters<AxiosInstance['request']>[0],
+  /** Request that reports endpoint-kinds instead of throwing. `unsupported`
+   * means the provider simply doesn't serve this product type (404/501). */
+  private async v1TryGet<T>(
     userToken: string,
+    url: string,
     method: string,
-  ): Promise<T> {
+  ): Promise<{ ok: true; data: T } | { ok: false; unsupported: boolean; error: Error }> {
     try {
-      const response = await this.api.request<T>({
-        ...config,
-        headers: {
-          ...(config.headers as Record<string, string>),
-          Authorization: `Bearer ${userToken}`,
-        },
-      });
-      return response.data;
+      const response = await this.api.get<T>(url, { headers: { Authorization: `Bearer ${userToken}` } });
+      return { ok: true, data: response.data };
     } catch (error) {
-      throw this.handleApiError(error, method);
+      const status = axios.isAxiosError(error) ? error.response?.status : undefined;
+      const unsupported = status === 404 || status === 501;
+      return { ok: false, unsupported, error: this.handleApiError(error, method) };
     }
   }
 
@@ -798,7 +829,7 @@ export const majorToMinorUnits = (major: number, currency: string): number =>
   Math.round(major * 10 ** fractionDigits(currency));
 
 /** Scopes the v1 authorization link must carry for recurring sync. */
-const V1_SCOPE = 'info accounts balance transactions offline_access';
+const V1_SCOPE = 'info accounts balance transactions cards offline_access';
 
 /** Link-header page ceiling; TrueLayer v1 pages at 100 rows. */
 const V1_TX_MAX_PAGES = 200;
@@ -807,18 +838,41 @@ const V1_TX_MAX_PAGES = 200;
 const normalizeV1AccountType = (raw?: string): string => {
   if (!raw) return 'other';
   const key = raw.toLowerCase().replace(/_account$/, '');
-  return ['current', 'savings', 'credit', 'cash', 'pension', 'mortgage', 'branch', 'other'].includes(key)
+  return ['current', 'savings', 'credit', 'charge', 'cash', 'pension', 'mortgage', 'branch', 'other'].includes(key)
     ? key
     : 'other';
 };
 
-const v1AccountIdentifiers = (account: TrueLayerV1Account): TrueLayerApiAccount['account_identifiers'] => {
+/** TrueLayer UDM row → the shared v3-shaped account used by picker + sync. */
+const v1ProductToApiAccount = (row: TrueLayerV1Account, kind: 'accounts' | 'cards'): TrueLayerApiAccount => ({
+  id: (kind === 'cards' ? (row.card_id ?? row.account_id) : (row.account_id ?? row.card_id)) ?? '',
+  type: kind === 'cards' ? ('card' as const) : ('account' as const),
+  currency: row.currency,
+  account_type: normalizeV1AccountType(
+    kind === 'cards' ? (row.card_type ?? row.account_type ?? 'credit') : row.account_type,
+  ),
+  account_identifiers: v1ProductIdentifiers(row, kind),
+  account_holder_names: row.display_name ? [row.display_name] : row.name_on_card ? [row.name_on_card] : [],
+  bic: null,
+  customer_segment: 'retail' as const,
+});
+
+/** A raw (unmapped) v1 data error saying the provider doesn't serve that
+ * product kind — the signal to retry the sibling endpoint. */
+const isV1UnsupportedPath = (error: unknown): boolean =>
+  axios.isAxiosError(error) && (error.response?.status === 404 || error.response?.status === 501);
+
+const v1ProductIdentifiers = (account: TrueLayerV1Account, kind: 'accounts' | 'cards') => {
+  if (kind === 'cards') {
+    const lastFour = account.last_four_digits ?? account.account_number?.number?.replace(/\D/g, '').slice(-4);
+    return lastFour ? [{ type: 'card_pan_last4' as const, last_four: lastFour }] : [];
+  }
   const number = account.account_number?.number?.replace(/[\s-]/g, '');
   if (!number) return [];
   const sortCode = account.account_number?.sort_code?.replace(/[\s-]/g, '');
   return [
     {
-      type: 'sort_code_account_number',
+      type: 'sort_code_account_number' as const,
       sort_code: sortCode ?? '',
       account_number: number,
     },
