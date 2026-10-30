@@ -90,11 +90,12 @@ function tokenGrantsDataAccess(jwt: string): boolean {
  * for a short-lived app bearer, cached per app; every data call adds
  * `Connection-Id` identifying the user's authorized data connection.
  *
- * v1 (legacy): built authorization link → POST /exchange-oauth (code) →
- * per-user bearer + rotating refresh token via POST /token; data calls are
- * plain GETs (/accounts, /accounts/{id}/balance, /accounts/{id}/transactions)
- * whose UDM payloads are mapped into the v3-shaped types here, so the
- * provider's sync/mapping code is shared.
+ * v1 (legacy): built authorization link → authorization code exchanged at
+ * POST {auth}/connect/token (form-encoded) for a per-user bearer + rotating
+ * refresh token (refreshed there, with the legacy POST /token as fallback);
+ * data calls are plain GETs (/accounts, /accounts/{id}/balance,
+ * /accounts/{id}/transactions) whose UDM payloads are mapped into the
+ * v3-shaped types here, so the provider's sync/mapping code is shared.
  *
  * Docs: https://docs.truelayer.com/reference/welcome-api-reference
  */
@@ -199,7 +200,7 @@ export class TrueLayerApiClient {
   //
   // For TrueLayer apps provisioned before Data v3 (no `data` scope). There is
   // no Connection-Id: the user authorizes via a built authorization link on
-  // the same auth host, the resulting code is exchanged at /exchange-oauth
+  // the same auth host; the resulting code is exchanged on it too
   // for a per-user bearer + rotating refresh token, and data calls are plain
   // GETs against /accounts, /accounts/{id}/balance and /accounts/{id}/transactions.
   // ==========================================================================
@@ -221,7 +222,12 @@ export class TrueLayerApiClient {
     return `${HOSTS[this.environment].auth}/?${params.toString()}`;
   }
 
-  /** POST /exchange-oauth — swap the authorization code for user tokens. */
+  /**
+   * POST {auth}/connect/token grant_type=authorization_code — swap the
+   * authorization code for user tokens. The OAuth token endpoint is strict:
+   * the body must be application/x-www-form-urlencoded (URLSearchParams does
+   * that), unlike the JSON client_credentials call above.
+   */
   async exchangeV1Code({
     code,
     redirectUri,
@@ -230,13 +236,16 @@ export class TrueLayerApiClient {
     redirectUri: string;
   }): Promise<TrueLayerV1TokenResponse> {
     try {
-      const response = await this.api.post<TrueLayerV1TokenResponse>('/exchange-oauth', {
-        grant_type: 'authorization_code',
-        code,
-        redirect_uri: redirectUri,
-        client_id: this.credentials.clientId,
-        client_secret: this.credentials.clientSecret,
-      });
+      const response = await this.auth.post<TrueLayerV1TokenResponse>(
+        '/connect/token',
+        new URLSearchParams({
+          grant_type: 'authorization_code',
+          code,
+          redirect_uri: redirectUri,
+          client_id: this.credentials.clientId,
+          client_secret: this.credentials.clientSecret,
+        }),
+      );
       return response.data;
     } catch (error) {
       if (axios.isAxiosError(error) && (error.response?.status === 400 || error.response?.status === 401)) {
@@ -250,22 +259,52 @@ export class TrueLayerApiClient {
   }
 
   /**
-   * POST /token grant_type=refresh_token. TrueLayer ROTATES the refresh token
-   * on every call, so the caller must persist the returned pair. A rejected
-   * grant (expired/revoked consent) maps to ForbiddenError so the shared
+   * grant_type=refresh_token. TrueLayer ROTATES the refresh token on every
+   * call, so the caller must persist the returned pair. A rejected grant
+   * (expired/revoked consent) maps to ForbiddenError so the shared
    * auth-failure engine flips the connection to "reconnect".
+   *
+   * The unified auth server (/connect/token) handles the grant; apps whose
+   * token endpoint predates it get a 404/unsupported_grant_type and we fall
+   * back to the legacy api/token path.
    */
   async refreshV1Token(refreshToken: string): Promise<TrueLayerV1TokenResponse> {
-    try {
-      const response = await this.api.post<TrueLayerV1TokenResponse>('/token', {
+    const form = () =>
+      new URLSearchParams({
         grant_type: 'refresh_token',
         refresh_token: refreshToken,
         client_id: this.credentials.clientId,
         client_secret: this.credentials.clientSecret,
       });
+    const isGrantRejected = (error: unknown) => {
+      if (!axios.isAxiosError(error)) return undefined;
+      const status = error.response?.status;
+      const code = (error.response?.data as { error?: string } | undefined)?.error;
+      // Endpoint/feature missing on the auth host: try the legacy endpoint.
+      if (status === 404 || code === 'unsupported_grant_type') return 'fallback';
+      // The refresh token itself died (expired consent or revoked app grant).
+      if (status === 400 || status === 401 || status === 403) return 'dead';
+      return undefined;
+    };
+
+    try {
+      const response = await this.auth.post<TrueLayerV1TokenResponse>('/connect/token', form());
       return response.data;
     } catch (error) {
-      if (axios.isAxiosError(error) && (error.response?.status === 400 || error.response?.status === 403)) {
+      const kind = isGrantRejected(error);
+      if (kind === 'dead') {
+        throw new ForbiddenError({
+          message: t({ key: 'bankDataProviders.truelayer.consentNotActive' }),
+        });
+      }
+      if (kind !== 'fallback') throw error;
+    }
+
+    try {
+      const response = await this.api.post<TrueLayerV1TokenResponse>('/token', form());
+      return response.data;
+    } catch (error) {
+      if (isGrantRejected(error) === 'dead') {
         throw new ForbiddenError({
           message: t({ key: 'bankDataProviders.truelayer.consentNotActive' }),
         });

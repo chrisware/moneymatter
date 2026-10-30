@@ -36,6 +36,7 @@ import {
   getTrueLayerTransactionsResultMock,
   getTrueLayerV1ConsentDeadMock,
   getTrueLayerV1PagedTransactionsMock,
+  getTrueLayerV1RefreshUnsupportedMock,
 } from '@tests/mocks/truelayer/mock-api';
 import { HttpResponse, http } from 'msw';
 
@@ -706,6 +707,62 @@ describe('TrueLayer Data Provider E2E', () => {
       expect(connection.isActive).toBe(true);
     });
 
+    it('confirms a bare pasted code, verifying state from the stored auth link', async () => {
+      const { connectionId, authUrl } = await helpers.bankDataProviders.connectProvider({
+        providerType: BANK_PROVIDER_TYPE.TRUELAYER,
+        credentials: {
+          clientId: VALID_TL_CLIENT_ID,
+          clientSecret: VALID_TL_CLIENT_SECRET,
+          apiVersion: 'v1',
+          manualReturn: true,
+        },
+        raw: true,
+      });
+      const state = new URL(authUrl!).searchParams.get('state')!;
+
+      const result = await helpers.makeRequest({
+        method: 'post',
+        url: `/bank-data-providers/${BANK_PROVIDER_TYPE.TRUELAYER}/oauth-callback`,
+        payload: { connectionId, code: VALID_TL_V1_CODE, state },
+      });
+      expect(result.status).toEqual(200);
+
+      const { connection } = await helpers.bankDataProviders.getConnectionDetails({
+        connectionId,
+        raw: true,
+      });
+      expect(connection.isActive).toBe(true);
+    });
+
+    it('bakes the frontend-reported origin into the redirect_uri', async () => {
+      const { authUrl } = await helpers.bankDataProviders.connectProvider({
+        providerType: BANK_PROVIDER_TYPE.TRUELAYER,
+        credentials: {
+          clientId: VALID_TL_CLIENT_ID,
+          clientSecret: VALID_TL_CLIENT_SECRET,
+          apiVersion: 'v1',
+          redirectOrigin: 'http://127.0.0.1:8080',
+        },
+        raw: true,
+      });
+      expect(new URL(authUrl!).searchParams.get('redirect_uri')).toBe('http://127.0.0.1:8080/bank-callback');
+
+      // A malformed origin must not become an open redirect target — the
+      // configured default is used instead.
+      const fallback = await helpers.bankDataProviders.connectProvider({
+        providerType: BANK_PROVIDER_TYPE.TRUELAYER,
+        credentials: {
+          clientId: VALID_TL_CLIENT_ID,
+          clientSecret: VALID_TL_CLIENT_SECRET,
+          apiVersion: 'v1',
+          redirectOrigin: 'javascript:alert(1)',
+        },
+        raw: true,
+      });
+      expect(new URL(fallback.authUrl!).searchParams.get('redirect_uri')).toContain('bank-callback');
+      expect(new URL(fallback.authUrl!).searchParams.get('redirect_uri')).not.toContain('javascript');
+    });
+
     it('lists v1 accounts with major-unit balances and stable account keys', async () => {
       const { connectionId } = await helpers.truelayer.pairTrueLayerUserV1();
 
@@ -791,6 +848,20 @@ describe('TrueLayer Data Provider E2E', () => {
       expect(creds.v1Token?.accessToken).toBe('tl-v1-access-token-rotated');
       expect(new Date(creds.v1Token!.accessExpiresAt).getTime()).toBeGreaterThan(Date.now());
       expect(account.id).toBeTruthy();
+    });
+
+    it('falls back to the legacy /token endpoint when the auth server lacks the refresh grant', async () => {
+      const { connectionId } = await helpers.truelayer.pairTrueLayerUserV1();
+      await expireStoredAccessToken(connectionId);
+      global.mswMockServer.use(getTrueLayerV1RefreshUnsupportedMock());
+
+      const { transactions } = await helpers.truelayer.connectV1AccountsAndSync({ connectionId });
+      expect(transactions.length).toBeGreaterThan(0);
+
+      const creds = (await BankDataProviderConnections.findByPk(
+        connectionId,
+      ))!.getDecryptedCredentials() as unknown as TrueLayerCredentials;
+      expect(creds.v1Token?.refreshToken).toBe(ROTATED_TL_V1_REFRESH_TOKEN);
     });
 
     it('deactivates the connection when the refresh token is dead', async () => {
