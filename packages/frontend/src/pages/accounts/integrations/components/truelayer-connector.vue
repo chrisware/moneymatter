@@ -61,7 +61,7 @@
               :values="apiVersionOptions"
               value-key="value"
               :label="t('pages.integrations.trueLayerConnector.apiVersionLabel')"
-              @update:model-value="(value) => (apiVersion = value ? value.value : 'v3')"
+              @update:model-value="(value) => (apiVersion = value ? value.value : 'v1')"
             />
             <div class="text-muted-foreground mt-1 text-xs">
               {{
@@ -263,8 +263,9 @@ const isManualReturn = computed(() => returnMode.value === 'manual');
 // Which Data API the user's TrueLayer app speaks. v3 is the Connection-Id
 // based product; "v1" is the legacy OAuth flow for apps provisioned before
 // Data v3 (no `data` scope) — HSBC-linked legacy apps fall back to it.
+// Defaults to v1: this deployment's TrueLayer app is legacy-only.
 type TrueLayerApiVersion = 'v3' | 'v1';
-const apiVersion = ref<TrueLayerApiVersion>('v3');
+const apiVersion = ref<TrueLayerApiVersion>('v1');
 
 const apiVersionOptions = computed(() => [
   {
