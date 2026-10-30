@@ -376,6 +376,8 @@
       "authUrlNotFound": "Authorization URL not found for this connection. Start the reconnect flow.",
       "noAuthUrl": "TrueLayer did not return an authorization URL for this connection.",
       "noPendingAuthorization": "No bank authorization is pending for this connection.",
+      "invalidCode": "TrueLayer rejected the authorization code. It may be expired, already used, or malformed — start the authorization again.",
+      "stateMismatch": "TrueLayer returned a state that doesn't match this authorization request. Start the authorization again.",
       "authorizationPending": "The bank authorization hasn't completed yet. Finish the authorization at your bank and try again.",
       "noActiveConnection": "No authorized bank connection yet. Please complete the TrueLayer authorization first.",
       "consentNotActive": "The bank consent is no longer active. Please reconnect your bank account.",

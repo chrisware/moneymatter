@@ -13,17 +13,24 @@ import { z } from 'zod';
 const schema = z.object({
   body: z.object({
     connectionId: recordId(),
+    /** v1 legacy flow only: authorization code from the redirect. */
+    code: z.string().min(1).max(500).optional(),
+    /** v1 legacy flow only: OAuth state echoed by TrueLayer. */
+    state: z.string().max(200).optional(),
+    /** v1 legacy manual-confirm fallback: the full pasted redirect URL. */
+    redirectUrl: z.string().max(2000).optional(),
   }),
 });
 
 /**
  * POST /api/bank-data-providers/truelayer/oauth-callback
- * Confirm a pending TrueLayer Data v3 authorization after the hosted page
- * returned the user to /bank-callback. Data v3 has no code/state exchange:
- * confirmation is "does the pending Connection-Id serve data yet?".
+ * Confirm a pending TrueLayer authorization after the hosted page returned
+ * the user to /bank-callback (or after a manual paste). Data v3 has no
+ * code/state exchange: confirmation is "does the pending Connection-Id serve
+ * data yet?". v1 legacy connections instead exchange the OAuth code here.
  */
 export default createController(schema, async ({ body, user }) => {
-  const { connectionId } = body;
+  const { connectionId, code, state, redirectUrl } = body;
 
   // Verify connection exists and belongs to user
   await findOrThrowNotFound({
@@ -40,7 +47,11 @@ export default createController(schema, async ({ body, user }) => {
   const provider = bankProviderRegistry.get(BANK_PROVIDER_TYPE.TRUELAYER) as TrueLayerProvider;
 
   // Throws BadRequest('authorizationPending') while consent isn't active yet.
-  await provider.handleAuthorizationCallback(connectionId);
+  await provider.handleAuthorizationCallback(connectionId, {
+    code,
+    state,
+    redirectUrl,
+  });
 
   // Confirmation is idempotent, so a failed enqueue can simply be retried by
   // the manual sync button — don't fail the request on queue errors.

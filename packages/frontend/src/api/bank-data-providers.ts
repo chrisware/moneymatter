@@ -66,7 +66,10 @@ interface BankConnectionDetails {
     currentBalance: number;
     currencyCode: string;
     type: string;
-    currencyFallback: { providerCurrency: string; assignedCurrency: string } | null;
+    currencyFallback: {
+      providerCurrency: string;
+      assignedCurrency: string;
+    } | null;
   }>;
   consent?: {
     validFrom: string | null;
@@ -78,6 +81,8 @@ interface BankConnectionDetails {
   deactivationReason?: string | null;
   /** TrueLayer manual-return mode: journey ends on TrueLayer's console page. */
   manualReturn?: boolean;
+  /** TrueLayer Data API generation ('v3' | 'v1'); other providers null. */
+  apiVersion?: string | null;
   /** Hosted authorization page while a journey is pending (reconnect flows). */
   authUrl?: string | null;
 }
@@ -316,9 +321,11 @@ export const completeEnableBankingOAuth = async (
 
 export const completeTrueLayerAuthorization = async (
   connectionId: string,
+  params?: { code?: string; state?: string; redirectUrl?: string },
 ): Promise<{ success: boolean; message: string }> => {
   const response = await api.post('/bank-data-providers/truelayer/oauth-callback', {
     connectionId,
+    ...params,
   });
   return response;
 };

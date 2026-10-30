@@ -50,7 +50,9 @@
 
           <div class="min-w-0 flex-1">
             <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <h1 class="truncate text-xl font-semibold tracking-tight">{{ connectionDetails.providerName }}</h1>
+              <h1 class="truncate text-xl font-semibold tracking-tight">
+                {{ connectionDetails.providerName }}
+              </h1>
 
               <DesktopOnlyTooltip :content="$t('pages.integrations.details.actions.renameButton')">
                 <UiButton
@@ -109,7 +111,11 @@
             {{ providerDisplayName }}
           </span>
           <span aria-hidden="true">·</span>
-          <span>{{ $t('pages.integrations.details.meta.connectedSince', { date: connectedSinceLabel }) }}</span>
+          <span>{{
+            $t('pages.integrations.details.meta.connectedSince', {
+              date: connectedSinceLabel,
+            })
+          }}</span>
         </div>
 
         <Card class="@container/summary mt-4">
@@ -127,7 +133,9 @@
               <div class="mt-1 text-2xl font-semibold tracking-tight tabular-nums">
                 {{ leadTotalLabel ?? connectionDetails.accounts.length }}
               </div>
-              <div class="text-muted-foreground mt-1 text-xs">{{ summarySubtitle }}</div>
+              <div class="text-muted-foreground mt-1 text-xs">
+                {{ summarySubtitle }}
+              </div>
             </div>
 
             <div
@@ -144,7 +152,9 @@
                 <div class="text-muted-foreground text-[11px] font-semibold tracking-[0.14em] uppercase">
                   {{ $t('pages.integrations.details.summary.accounts') }}
                 </div>
-                <div class="mt-1 text-base font-semibold tabular-nums">{{ accountsStatValue }}</div>
+                <div class="mt-1 text-base font-semibold tabular-nums">
+                  {{ accountsStatValue }}
+                </div>
                 <div v-if="totalAvailableCount" class="text-muted-foreground mt-0.5 text-xs">
                   {{ $t('pages.integrations.details.summary.connectedSub') }}
                 </div>
@@ -153,13 +163,17 @@
                 <div class="text-muted-foreground text-[11px] font-semibold tracking-[0.14em] uppercase">
                   {{ $t('pages.integrations.details.connectionDetails.autoSync') }}
                 </div>
-                <div class="mt-1 text-base font-semibold tabular-nums">{{ autoSyncStatLabel }}</div>
+                <div class="mt-1 text-base font-semibold tabular-nums">
+                  {{ autoSyncStatLabel }}
+                </div>
               </div>
               <div>
                 <div class="text-muted-foreground text-[11px] font-semibold tracking-[0.14em] uppercase">
                   {{ $t('pages.integrations.details.summary.lastSync') }}
                 </div>
-                <div class="mt-1 text-base font-semibold tabular-nums">{{ lastSyncLabel }}</div>
+                <div class="mt-1 text-base font-semibold tabular-nums">
+                  {{ lastSyncLabel }}
+                </div>
                 <div v-if="failedSyncCount" class="text-destructive-text mt-0.5 text-xs">
                   {{ $t('pages.integrations.details.summary.accountsFailed', failedSyncCount) }}
                 </div>
@@ -216,7 +230,9 @@
           class="border-destructive/25 bg-destructive/5 text-destructive-text mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border px-3 py-2.5 text-sm"
         >
           <CircleAlertIcon class="size-4 shrink-0" />
-          <p class="min-w-40 flex-1">{{ $t('pages.integrations.authFailure.description') }}</p>
+          <p class="min-w-40 flex-1">
+            {{ $t('pages.integrations.authFailure.description') }}
+          </p>
           <UiButton
             variant="outline"
             size="sm"
@@ -229,20 +245,40 @@
         </div>
 
         <!-- TrueLayer manual-return mode: the journey ends on TrueLayer's own
-             redirect page, so completion is confirmed from here. -->
+             redirect page, so completion is confirmed from here. v1 journeys
+             additionally need the redirected URL pasted (OAuth code). -->
         <div
           v-if="isPendingManualAuthorization"
-          class="border-primary/25 bg-primary/5 mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border px-3 py-2.5 text-sm"
+          class="border-primary/25 bg-primary/5 mt-3 rounded-lg border px-3 py-2.5 text-sm"
         >
-          <CircleAlertIcon class="size-4 shrink-0" />
-          <p class="min-w-40 flex-1">{{ $t('pages.integrations.details.manualAuth.description') }}</p>
-          <div class="flex gap-2">
-            <UiButton variant="outline" size="sm" :disabled="isManualAuthPending" @click="handleManualAuthOpen">
-              {{ $t('pages.integrations.details.manualAuth.openButton') }}
-            </UiButton>
-            <UiButton size="sm" :disabled="isManualAuthPending" @click="handleManualAuthConfirm">
-              {{ $t('pages.integrations.details.manualAuth.confirmButton') }}
-            </UiButton>
+          <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <CircleAlertIcon class="size-4 shrink-0" />
+            <p class="min-w-40 flex-1">
+              {{ $t('pages.integrations.details.manualAuth.description') }}
+            </p>
+            <div class="flex gap-2">
+              <UiButton variant="outline" size="sm" :disabled="isManualAuthPending" @click="handleManualAuthOpen">
+                {{ $t('pages.integrations.details.manualAuth.openButton') }}
+              </UiButton>
+              <UiButton
+                size="sm"
+                :disabled="isManualAuthPending || (isV1ManualAuthorization && !manualRedirectUrl.trim())"
+                @click="handleManualAuthConfirm"
+              >
+                {{ $t('pages.integrations.details.manualAuth.confirmButton') }}
+              </UiButton>
+            </div>
+          </div>
+          <div v-if="isV1ManualAuthorization" class="mt-2">
+            <InputField
+              v-model="manualRedirectUrl"
+              type="text"
+              :label="$t('pages.integrations.trueLayerConnector.v1PasteLabel')"
+              :placeholder="$t('pages.integrations.trueLayerConnector.v1PastePlaceholder')"
+            />
+            <div class="text-muted-foreground mt-1 text-xs">
+              {{ $t('pages.integrations.trueLayerConnector.v1PasteHint') }}
+            </div>
           </div>
         </div>
 
@@ -473,7 +509,10 @@ const {
   data: connectionDetails,
   isLoading,
   error,
-} = useBankConnectionDetails({ connectionId: connectionId, queryOptions: { retry: false } });
+} = useBankConnectionDetails({
+  connectionId: connectionId,
+  queryOptions: { retry: false },
+});
 
 const isConnectionNotFound = computed(() => isNotFoundError(error.value));
 
@@ -493,7 +532,9 @@ const autoSyncIntervalHours = computed(() => {
 const autoSyncStatLabel = computed(() =>
   autoSyncIntervalHours.value === null
     ? t('pages.integrations.details.summary.autoSyncOff')
-    : t('pages.integrations.details.summary.every', { hours: autoSyncIntervalHours.value }),
+    : t('pages.integrations.details.summary.every', {
+        hours: autoSyncIntervalHours.value,
+      }),
 );
 
 const lastSyncLabel = computed(() => {
@@ -685,7 +726,9 @@ const { mutate: syncNowMutation, isPending: isSyncingNow } = useMutation({
   onSuccess: ({ queuedAccounts }) => {
     // Nothing queued means the cached connection is stale (deactivated or emptied since load).
     if (queuedAccounts === 0) {
-      queryClient.invalidateQueries({ queryKey: [VUE_QUERY_GLOBAL_PREFIXES.bankConnectionChange] });
+      queryClient.invalidateQueries({
+        queryKey: [VUE_QUERY_GLOBAL_PREFIXES.bankConnectionChange],
+      });
       return;
     }
     addSuccessNotification(t('pages.integrations.details.connectedAccounts.syncStarted'));
@@ -845,7 +888,9 @@ const handleReconnect = async () => {
       window.open(response.authUrl, '_blank', 'noopener');
       isReconnectPending.value = false;
       isReconnectDialogOpen.value = false;
-      queryClient.invalidateQueries({ queryKey: [VUE_QUERY_GLOBAL_PREFIXES.bankConnectionChange] });
+      queryClient.invalidateQueries({
+        queryKey: [VUE_QUERY_GLOBAL_PREFIXES.bankConnectionChange],
+      });
       return;
     }
 
@@ -870,6 +915,13 @@ const isPendingManualAuthorization = computed(
     !connectionDetails.value.isActive,
 );
 
+// Legacy v1 connections confirm by pasting the redirect URL (its `code` query
+// param is what the backend exchanges for tokens); v3 just polls.
+const isV1ManualAuthorization = computed(
+  () => isPendingManualAuthorization.value && connectionDetails.value?.apiVersion === 'v1',
+);
+const manualRedirectUrl = ref('');
+
 const handleManualAuthOpen = () => {
   if (connectionDetails.value?.authUrl) {
     window.open(connectionDetails.value.authUrl, '_blank', 'noopener');
@@ -879,9 +931,14 @@ const handleManualAuthOpen = () => {
 const handleManualAuthConfirm = async () => {
   try {
     isManualAuthPending.value = true;
-    await completeTrueLayerAuthorization(connectionId.value);
+    await completeTrueLayerAuthorization(
+      connectionId.value,
+      isV1ManualAuthorization.value ? { redirectUrl: manualRedirectUrl.value.trim() } : undefined,
+    );
     addSuccessNotification(t('pages.integrations.details.manualAuth.confirmed'));
-    queryClient.invalidateQueries({ queryKey: [VUE_QUERY_GLOBAL_PREFIXES.bankConnectionChange] });
+    queryClient.invalidateQueries({
+      queryKey: [VUE_QUERY_GLOBAL_PREFIXES.bankConnectionChange],
+    });
   } catch (err) {
     addErrorNotification(err instanceof Error ? err.message : t('pages.integrations.details.manualAuth.confirmFailed'));
   } finally {
