@@ -13,11 +13,11 @@ import { z } from 'zod';
 const schema = z.object({
   body: z.object({
     connectionId: recordId(),
-    /** v1 legacy flow only: authorization code from the redirect. */
+    /** Authorization code from the redirect. */
     code: z.string().min(1).max(500).optional(),
-    /** v1 legacy flow only: OAuth state echoed by TrueLayer. */
+    /** OAuth state echoed by TrueLayer. */
     state: z.string().max(200).optional(),
-    /** v1 legacy manual-confirm fallback: the full pasted redirect URL. */
+    /** Manual-confirm fallback: the full pasted redirect URL. */
     redirectUrl: z.string().max(2000).optional(),
   }),
 });
@@ -25,9 +25,8 @@ const schema = z.object({
 /**
  * POST /api/bank-data-providers/truelayer/oauth-callback
  * Confirm a pending TrueLayer authorization after the hosted page returned
- * the user to /bank-callback (or after a manual paste). Data v3 has no
- * code/state exchange: confirmation is "does the pending Connection-Id serve
- * data yet?". v1 legacy connections instead exchange the OAuth code here.
+ * the user to /bank-callback (or after a manual paste): exchanges the OAuth
+ * code for the connection's rotating token pair.
  */
 export default createController(schema, async ({ body, user }) => {
   const { connectionId, code, state, redirectUrl } = body;
@@ -46,7 +45,8 @@ export default createController(schema, async ({ body, user }) => {
 
   const provider = bankProviderRegistry.get(BANK_PROVIDER_TYPE.TRUELAYER) as TrueLayerProvider;
 
-  // Throws BadRequest('authorizationPending') while consent isn't active yet.
+  // Throws BadRequest on state mismatch / dead code; retrying starts a fresh
+  // authorization journey.
   await provider.handleAuthorizationCallback(connectionId, {
     code,
     state,

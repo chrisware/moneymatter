@@ -60,10 +60,8 @@ import { VUE_QUERY_GLOBAL_PREFIXES } from '@/common/const';
 import DocsLink from '@/components/common/docs-link.vue';
 import { useNotificationCenter } from '@/components/notification-center';
 import { useSyncStatus } from '@/composable/use-sync-status';
-import { isApiErrorWithCode } from '@/js/errors';
 import { ROUTES_NAMES } from '@/routes/constants';
 import { useAccountsStore } from '@/stores/accounts';
-import { API_ERROR_CODES } from '@bt/shared/types';
 import { useQueryClient } from '@tanstack/vue-query';
 import { CheckCircle2Icon, InfoIcon } from '@lucide/vue';
 import { onMounted, ref } from 'vue';
@@ -88,26 +86,11 @@ const TL_KEY = 'pendi…nId';
 
 /**
  * TrueLayer completes the consent at the bank just before redirecting back;
- * the Connection-Id may serve data a beat later, so retry the confirmation a
- * few times while the backend answers 503 (consent not active yet).
- * v1 legacy journeys carry a real OAuth code/state which is exchanged server
- * side; v3 ignores both.
+ * the journey carries a real OAuth code/state which the backend exchanges for
+ * the connection's rotating token pair.
  */
 const confirmTrueLayer = async (connectionId: string, oauth?: { code?: string; state?: string }): Promise<void> => {
-  const attempts = 4;
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
-    try {
-      await completeTrueLayerAuthorization(connectionId, oauth);
-      return;
-    } catch (err) {
-      const stillPending = isApiErrorWithCode(err, API_ERROR_CODES.serviceUnavailable) && attempt < attempts - 1;
-      if (!stillPending) throw err;
-
-      const { promise, resolve } = Promise.withResolvers<void>();
-      setTimeout(resolve, 1500);
-      await promise;
-    }
-  }
+  await completeTrueLayerAuthorization(connectionId, oauth);
 };
 
 /** Shared success path: refresh global state so badges/banners update live. */
@@ -153,9 +136,9 @@ onMounted(async () => {
   }
 
   try {
-    // TrueLayer: no code/state to exchange — the pending Connection-Id stored
-    // before the redirect is the whole correlation. Checked first so its
-    // return (which may carry stray query params) is never misread as EB.
+    // TrueLayer: exchange the returned OAuth code on the pending connection
+    // stored before the redirect. Checked first so its return (which may
+    // carry stray query params) is never misread as EB.
     const truelayerConnectionId = localStorage.getItem(TL_KEY);
     if (truelayerConnectionId) {
       await confirmTrueLayer(truelayerConnectionId, { code, state });

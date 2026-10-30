@@ -10,12 +10,12 @@ import {
 } from '@bt/shared/types';
 import { Money } from '@common/types/money';
 import { t } from '@i18n/index';
-import { BadRequestError, ForbiddenError, ServiceUnavailableError, ValidationError } from '@js/errors';
+import { BadRequestError, ForbiddenError, ValidationError } from '@js/errors';
 import { logger } from '@js/utils';
 import Accounts from '@models/accounts.model';
 import BankDataProviderConnections from '@models/bank-data-provider-connections.model';
 import { findOneTransaction } from '@models/transactions-query';
-import Users, { getUserDefaultCategory } from '@models/users.model';
+import { getUserDefaultCategory } from '@models/users.model';
 import { FRONTEND_BASE_URL } from '@root/config';
 import {
   BaseBankDataProvider,
@@ -26,7 +26,6 @@ import {
   type ProviderMetadata,
   type ProviderTransaction,
 } from '@services/bank-data-providers';
-import { getEmailForUser } from '@services/sharing/find-user-by-email.service';
 import { createTransaction } from '@services/transactions';
 import { accountHasPlannedRows } from '@services/transactions/planned-matching';
 import { randomUUID } from 'node:crypto';
@@ -37,13 +36,7 @@ import { encryptCredentials } from '../utils/credential-encryption';
 import { notifyPlannedConfirmations } from '../utils/notify-planned-confirmations';
 import { writeBankBalanceWithHistory } from '../utils/write-bank-balance-with-history';
 import { centsFromMinorUnits, TrueLayerApiClient } from './api-client';
-import type {
-  TrueLayerApiAccount,
-  TrueLayerApiBalanceResponse,
-  TrueLayerApiTransaction,
-  TrueLayerCredentials,
-  TrueLayerMetadata,
-} from './types';
+import type { TrueLayerAccount, TrueLayerCredentials, TrueLayerMetadata, TrueLayerTransaction } from './types';
 
 /**
  * The callback page the TrueLayer hosted journey returns the user to.
@@ -75,20 +68,13 @@ const getRedirectUrl = (manualReturn = false, origin?: string) =>
   (manualReturn ? CONSOLE_REDIRECT_PAGE_URL : `${origin ?? FRONTEND_BASE_URL}/bank-callback`);
 
 /**
- * UK Open Banking recurring consents are granted for 180 days (TrueLayer's
- * reconfirmation endpoint is still in development, so an expired consent is
- * resolved by creating a fresh data connection via `reauthorize`).
- */
-const CONSENT_WINDOW_DAYS = 180;
-
-/**
- * v1 refresh tokens live ~90 days (SSR banks may revoke earlier). Stamping a
+ * Refresh tokens live ~90 days (SSR banks may revoke earlier). Stamping a
  * shorter window makes the UI nudge a reconnect before data silently stops.
  */
-const V1_CONSENT_WINDOW_DAYS = 90;
+const CONSENT_WINDOW_DAYS = 90;
 
-/** Refresh the v1 bearer this many seconds before its real expiry. */
-const V1_TOKEN_MARGIN_S = 120;
+/** Refresh the bearer this many seconds before its real expiry. */
+const TOKEN_MARGIN_S = 120;
 
 /**
  * Incremental fetches start this far before the newest stored transaction.
@@ -123,17 +109,15 @@ interface PersisterCounters {
 }
 
 /**
- * TrueLayer provider implementation.
+ * TrueLayer provider implementation (Legacy Data API v1).
  * Syncs UK bank accounts (HSBC, Barclays, Monzo, …) through the user's own
  * TrueLayer application: app client-credentials are stored per connection and
- * each bank link is established via TrueLayer's hosted authorization page.
- *
- * Two API generations are supported, chosen per connection at connect time:
- * - `v3` (default): the Data API with Connection-Id-scoped data calls.
- * - `v1` (legacy): the OAuth authorization-code + rotating refresh-token flow
- *   (Unified Data Model, major-unit amounts) for apps that predate Data v3
- *   and lack the `data` scope. User tokens live in the encrypted credentials
- *   column; consent lapses after ~90 days, handled by the reauthorize journey.
+ * each bank link is established via TrueLayer's hosted authorization page
+ * (OAuth authorization-code + rotating refresh token, Unified Data Model with
+ * major-unit amounts normalized to cents by the API client). User tokens live
+ * in the encrypted credentials column; consent lapses after ~90 days, handled
+ * by the reauthorize journey. One authorization grant covers one bank —
+ * linking a second bank means a second connection.
  *
  * Docs: https://docs.truelayer.com/docs/enable-your-users-to-connect-their-bank-account
  */
@@ -149,7 +133,7 @@ export class TrueLayerProvider extends BaseBankDataProvider {
     features: {
       supportsWebhooks: false, // webhooks need a Console-registered URI; polling covers auto-sync
       supportsRealtime: false,
-      requiresReauth: true, // recurring consent lapses after ~180 days
+      requiresReauth: true, // recurring consent lapses after ~90 days
       supportsManualSync: true,
       supportsAutoSync: true,
       defaultSyncInterval: 12 * 60 * 60 * 1000, // 12 hours
@@ -182,34 +166,14 @@ export class TrueLayerProvider extends BaseBankDataProvider {
       });
     }
 
-    const endUser = await this.getEndUser(userId);
     const manualReturn = credentials.manualReturn === true;
-    const apiVersion = credentials.apiVersion === 'v1' ? 'v1' : 'v3';
     const redirectOrigin = sanitizeRedirectOrigin(credentials.redirectOrigin);
     const redirectUri = getRedirectUrl(manualReturn, redirectOrigin);
 
-    // v1 has no Connection-Id: the journey is a pure authorization link and
-    // confirmation is a code exchange done by the callback.
-    const v1State = randomUUID();
-    let authUrl: string;
-    let tlPendingConnectionId: string | undefined;
-    let tlUserId: string | undefined;
-    if (apiVersion === 'v1') {
-      authUrl = apiClient.buildV1AuthUrl({ redirectUri, state: v1State });
-    } else {
-      const created = await apiClient.createDataConnection({
-        returnUri: redirectUri,
-        user: endUser,
-      });
-      if (!created.hosted_page?.uri) {
-        throw new BadRequestError({
-          message: t({ key: 'bankDataProviders.truelayer.noAuthUrl' }),
-        });
-      }
-      authUrl = created.hosted_page.uri;
-      tlPendingConnectionId = created.id;
-      tlUserId = created.user?.id;
-    }
+    // The journey is a pure authorization link; confirmation is a code
+    // exchange done by the callback.
+    const pendingState = randomUUID();
+    const authUrl = apiClient.buildAuthUrl({ redirectUri, state: pendingState });
 
     const existingConnections = await BankDataProviderConnections.count({
       where: { userId, providerType: this.metadata.type },
@@ -229,10 +193,8 @@ export class TrueLayerProvider extends BaseBankDataProvider {
         environment: credentials.environment ?? 'production',
       }),
       metadata: {
-        apiVersion,
-        ...(apiVersion === 'v1'
-          ? { tlPendingState: v1State, tlV1RedirectUri: redirectUri }
-          : { tlPendingConnectionId, tlUserId }),
+        tlPendingState: pendingState,
+        tlV1RedirectUri: redirectUri,
         authUrl,
         manualReturn,
         tlRedirectOrigin: redirectOrigin,
@@ -264,9 +226,9 @@ export class TrueLayerProvider extends BaseBankDataProvider {
 
   /**
    * Complete the authorization journey after the hosted page returned the
-   * user to the callback URL. There is no code/state to exchange in Data v3:
-   * confirmation is "does this Connection-Id serve data yet?" — TrueLayer
-   * answers `invalid_state` until the user's consent is active at the bank.
+   * user to the callback URL: validate the OAuth `state`, exchange the
+   * authorization code for the rotating token pair (persisted in the
+   * encrypted credentials column), snapshot the account list, and activate.
    */
   async handleAuthorizationCallback(
     connectionId: string,
@@ -278,87 +240,6 @@ export class TrueLayerProvider extends BaseBankDataProvider {
     const credentials = await this.getValidatedCredentials(connectionId);
     const metadata = connection.metadata as TrueLayerMetadata;
 
-    if (metadata.apiVersion === 'v1') {
-      await this.completeV1Authorization({
-        connection,
-        credentials,
-        metadata,
-        params,
-      });
-      return;
-    }
-
-    const pendingId = metadata.tlPendingConnectionId;
-
-    if (!pendingId) {
-      // Already confirmed (double-submit / refreshed page) — idempotent success.
-      if (metadata.tlConnectionId) return;
-      throw new BadRequestError({
-        message: t({
-          key: 'bankDataProviders.truelayer.noPendingAuthorization',
-        }),
-      });
-    }
-
-    const apiClient = new TrueLayerApiClient(credentials);
-    const accountsResponse = await apiClient.getConnectedAccounts({
-      connectionId: pendingId,
-      tolerateInvalidState: true,
-    });
-
-    if (!accountsResponse) {
-      // 503: consent not active YET — the user may still be finishing the bank
-      // side of the journey; the callback page retries on this code.
-      throw new ServiceUnavailableError({
-        message: t({ key: 'bankDataProviders.truelayer.authorizationPending' }),
-      });
-    }
-
-    const now = new Date();
-    const accounts = (accountsResponse.items ?? []).filter((a) => a.type === 'account');
-
-    const newMetadata: TrueLayerMetadata = {
-      ...metadata,
-      tlConnectionId: pendingId,
-      tlPendingConnectionId: undefined,
-      authUrl: undefined,
-      accounts,
-      accountCount: accounts.length,
-      consentValidFrom: now.toISOString(),
-      consentValidUntil: new Date(now.getTime() + CONSENT_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString(),
-      consecutiveAuthFailures: 0,
-      deactivationReason: null,
-    };
-
-    connection.metadata = newMetadata as any;
-    connection.isActive = true;
-    await connection.save();
-
-    // A reauthorize produced a NEW Connection-Id, and account ids are scoped to
-    // a connection — re-match existing system accounts by their stable bank
-    // identifier so their synced history keeps flowing.
-    await this.updateExistingAccountExternalIds({
-      connectionId,
-      newAccounts: accounts,
-    });
-  }
-
-  /**
-   * v1 confirmation: validate the OAuth `state`, exchange the authorization
-   * code for the user's rotating token pair (persisted in the encrypted
-   * credentials column), snapshot the account list, and activate.
-   */
-  private async completeV1Authorization({
-    connection,
-    credentials,
-    metadata,
-    params,
-  }: {
-    connection: BankDataProviderConnections;
-    credentials: TrueLayerCredentials;
-    metadata: TrueLayerMetadata;
-    params?: { code?: string; state?: string; redirectUrl?: string };
-  }): Promise<void> {
     let code = params?.code;
     let state = params?.state;
     if (params?.redirectUrl) {
@@ -399,7 +280,7 @@ export class TrueLayerProvider extends BaseBankDataProvider {
     const apiClient = new TrueLayerApiClient(credentials);
     const redirectUri =
       metadata.tlV1RedirectUri ?? getRedirectUrl(metadata.manualReturn === true, metadata.tlRedirectOrigin);
-    const tokens = await apiClient.exchangeV1Code({ code, redirectUri });
+    const tokens = await apiClient.exchangeCode({ code, redirectUri });
 
     const now = new Date();
     // Persist the code-derived tokens immediately: the code is consumed at
@@ -411,18 +292,18 @@ export class TrueLayerProvider extends BaseBankDataProvider {
         accessToken: tokens.access_token,
         refreshToken: tokens.refresh_token ?? credentials.v1Token?.refreshToken ?? '',
         accessExpiresAt: new Date(
-          now.getTime() + Math.max(0, (tokens.expires_in ?? 3600) - V1_TOKEN_MARGIN_S) * 1000,
+          now.getTime() + Math.max(0, (tokens.expires_in ?? 3600) - TOKEN_MARGIN_S) * 1000,
         ).toISOString(),
       },
     });
     await connection.save();
 
     // Account snapshot is best-effort — the account picker/sync re-fetches.
-    let accounts: TrueLayerApiAccount[] = metadata.accounts ?? [];
+    let accounts: TrueLayerAccount[] = metadata.accounts ?? [];
     try {
-      accounts = await apiClient.v1GetAccounts(tokens.access_token);
+      accounts = await apiClient.getAccounts(tokens.access_token);
     } catch (error) {
-      logger.info(`[TrueLayer] v1 account snapshot after exchange failed: ${String((error as Error).message)}`);
+      logger.info(`[TrueLayer] Account snapshot after exchange failed: ${String((error as Error).message)}`);
     }
 
     const fresh = await this.getConnection(connection.id);
@@ -434,13 +315,16 @@ export class TrueLayerProvider extends BaseBankDataProvider {
       accounts,
       accountCount: accounts.length,
       consentValidFrom: now.toISOString(),
-      consentValidUntil: new Date(now.getTime() + V1_CONSENT_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString(),
+      consentValidUntil: new Date(now.getTime() + CONSENT_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString(),
       consecutiveAuthFailures: 0,
       deactivationReason: null,
     } satisfies TrueLayerMetadata as any;
     fresh.isActive = true;
     await fresh.save();
 
+    // Account ids can drift when a reauthorize produces a fresh consent;
+    // re-match existing system accounts by their stable bank identifier so
+    // their synced history keeps flowing.
     await this.updateExistingAccountExternalIds({
       connectionId: fresh.id,
       newAccounts: accounts,
@@ -448,7 +332,7 @@ export class TrueLayerProvider extends BaseBankDataProvider {
   }
 
   /**
-   * Fresh v1 bearer token for the connection: cached while valid, otherwise
+   * Fresh bearer token for the connection: cached while valid, otherwise
    * refreshed — TrueLayer rotates the refresh token on every renewal, so the
    * returned pair is written back to the encrypted credentials column.
    */
@@ -466,12 +350,12 @@ export class TrueLayerProvider extends BaseBankDataProvider {
       });
     }
 
-    if (new Date(stored.accessExpiresAt).getTime() > Date.now() + V1_TOKEN_MARGIN_S * 1000) {
+    if (new Date(stored.accessExpiresAt).getTime() > Date.now() + TOKEN_MARGIN_S * 1000) {
       return stored.accessToken;
     }
 
     const apiClient = new TrueLayerApiClient(credentials);
-    const tokens = await apiClient.refreshV1Token(stored.refreshToken);
+    const tokens = await apiClient.refreshToken(stored.refreshToken);
 
     connection.setEncryptedCredentials({
       ...credentials,
@@ -479,7 +363,7 @@ export class TrueLayerProvider extends BaseBankDataProvider {
         accessToken: tokens.access_token,
         refreshToken: tokens.refresh_token ?? stored.refreshToken,
         accessExpiresAt: new Date(
-          Date.now() + Math.max(0, (tokens.expires_in ?? 3600) - V1_TOKEN_MARGIN_S) * 1000,
+          Date.now() + Math.max(0, (tokens.expires_in ?? 3600) - TOKEN_MARGIN_S) * 1000,
         ).toISOString(),
       },
     });
@@ -505,59 +389,34 @@ export class TrueLayerProvider extends BaseBankDataProvider {
 
     const apiClient = new TrueLayerApiClient(credentials);
 
-    // v1: mint a brand-new authorization link + state; the stale rotating
-    // tokens stay put (a dead consent surfaces via the auth-failure engine)
-    // and are replaced when the fresh exchange lands.
-    if (metadata.apiVersion === 'v1') {
-      const state = randomUUID();
-      const redirectUri = getRedirectUrl(metadata.manualReturn === true, metadata.tlRedirectOrigin);
-      const authUrl = apiClient.buildV1AuthUrl({ redirectUri, state });
-
-      connection.isActive = false;
-      connection.metadata = {
-        ...metadata,
-        authUrl,
-        tlPendingState: state,
-        tlV1RedirectUri: redirectUri,
-        consentValidUntil: new Date().toISOString(),
-      } as TrueLayerMetadata;
-      await connection.save();
-      return authUrl;
-    }
-
-    const endUser = await this.getEndUser(connection.userId);
-    const created = await apiClient.createDataConnection({
-      returnUri: getRedirectUrl(metadata.manualReturn === true, metadata.tlRedirectOrigin),
-      user: endUser,
-      tlUserId: metadata.tlUserId,
-    });
-    if (!created.hosted_page?.uri) {
-      throw new BadRequestError({
-        message: t({ key: 'bankDataProviders.truelayer.noAuthUrl' }),
-      });
-    }
+    // Mint a brand-new authorization link + state; the stale rotating tokens
+    // stay put (a dead consent surfaces via the auth-failure engine) and are
+    // replaced when the fresh exchange lands.
+    const state = randomUUID();
+    const redirectUri = getRedirectUrl(metadata.manualReturn === true, metadata.tlRedirectOrigin);
+    const authUrl = apiClient.buildAuthUrl({ redirectUri, state });
 
     // Mark inactive + expired up-front: every surfacing (badge, banner) shows
     // "needs reconnect" until the journey completes. The stale consent's
-    // transactions keep their account links via externalId re-matching above.
+    // transactions keep their account links via externalId re-matching in the
+    // callback.
     connection.isActive = false;
     connection.metadata = {
       ...metadata,
-      tlPendingConnectionId: created.id,
-      tlUserId: created.user?.id ?? metadata.tlUserId,
-      authUrl: created.hosted_page.uri,
+      authUrl,
+      tlPendingState: state,
+      tlV1RedirectUri: redirectUri,
       consentValidUntil: new Date().toISOString(),
     } as TrueLayerMetadata;
     await connection.save();
-
-    return created.hosted_page.uri;
+    return authUrl;
   }
 
   async disconnect(connectionId: string): Promise<void> {
     const connection = await this.getConnection(connectionId);
     this.validateProviderType(connection);
 
-    // Data v3 exposes no revoke endpoint; dropping the row stops all access
+    // TrueLayer exposes no revoke endpoint; dropping the row stops all access
     // (the consent itself lapses at the bank after its window).
     await connection.destroy();
   }
@@ -591,14 +450,12 @@ export class TrueLayerProvider extends BaseBankDataProvider {
     }
 
     const existing = (await this.getDecryptedCredentials(connectionId)) as unknown as TrueLayerCredentials | undefined;
-    const existingMetadata = connection.metadata as TrueLayerMetadata;
 
     connection.setEncryptedCredentials({
       clientId: newCredentials.clientId,
       clientSecret: newCredentials.clientSecret,
       environment: newCredentials.environment ?? 'production',
-      apiVersion: newCredentials.apiVersion ?? existing?.apiVersion ?? existingMetadata.apiVersion,
-      // v1 user tokens are consented against the old app; a rotated client_id
+      // User tokens are consented against the old app; a rotated client_id
       // invalidates them, so the user must reauthorize instead.
       v1Token: existing?.v1Token && existing.clientId === newCredentials.clientId ? existing.v1Token : undefined,
     });
@@ -623,18 +480,9 @@ export class TrueLayerProvider extends BaseBankDataProvider {
     const ctx = await this.getAuthorizationContext(connectionId);
     const apiClient = new TrueLayerApiClient(ctx.credentials);
 
-    let accounts: TrueLayerApiAccount[];
+    let accounts: TrueLayerAccount[];
     try {
-      accounts =
-        ctx.apiVersion === 'v1'
-          ? await apiClient.v1GetAccounts(ctx.userToken)
-          : (
-              (
-                await apiClient.getConnectedAccounts({
-                  connectionId: ctx.tlConnectionId,
-                })
-              )?.items ?? []
-            ).filter((a) => a.type === 'account');
+      accounts = await apiClient.getAccounts(ctx.userToken);
       await this.resetAuthFailures(connectionId);
     } catch (error) {
       await this.handleProviderError({ connectionId, error });
@@ -645,13 +493,7 @@ export class TrueLayerProvider extends BaseBankDataProvider {
     for (const account of accounts) {
       let balance: Cents = asCents(0);
       try {
-        const balanceResponse =
-          ctx.apiVersion === 'v1'
-            ? await apiClient.v1GetAccountBalance(ctx.userToken, account.id)
-            : await apiClient.getAccountBalance({
-                connectionId: ctx.tlConnectionId,
-                accountId: account.id,
-              });
+        const balanceResponse = await apiClient.getAccountBalance(ctx.userToken, account.id);
         balance = asCents(
           centsFromMinorUnits(
             balanceResponse.current_balance_in_minor ?? 0,
@@ -668,7 +510,7 @@ export class TrueLayerProvider extends BaseBankDataProvider {
     return providerAccounts;
   }
 
-  private toProviderAccount(account: TrueLayerApiAccount, balance: Cents): ProviderAccount {
+  private toProviderAccount(account: TrueLayerAccount, balance: Cents): ProviderAccount {
     const currency = (account.currency || '').toUpperCase();
     const accountKey = this.accountIdentifierKey(account);
 
@@ -691,7 +533,7 @@ export class TrueLayerProvider extends BaseBankDataProvider {
   }
 
   /** Stable cross-connection identity: IBAN, sort-code+account-number, or card PAN tail. */
-  private accountIdentifierKey(account: TrueLayerApiAccount): string | null {
+  private accountIdentifierKey(account: TrueLayerAccount): string | null {
     for (const identifier of account.account_identifiers ?? []) {
       if (identifier.type === 'iban') return `iban:${identifier.iban.toUpperCase().replace(/\s+/g, '')}`;
       if (identifier.type === 'sort_code_account_number') {
@@ -702,7 +544,7 @@ export class TrueLayerProvider extends BaseBankDataProvider {
     return null;
   }
 
-  private deriveAccountName(account: TrueLayerApiAccount): string {
+  private deriveAccountName(account: TrueLayerAccount): string {
     const typeLabel = ACCOUNT_TYPE_LABELS[account.account_type ?? ''] ?? 'Account';
     const last4 =
       account.account_identifiers?.find((i) => i.type === 'sort_code_account_number')?.account_number.slice(-4) ??
@@ -716,22 +558,23 @@ export class TrueLayerProvider extends BaseBankDataProvider {
   }
 
   /**
-   * After a reauthorize, account ids under the new Connection-Id may differ.
-   * System accounts already on this connection get their externalId migrated
-   * when their stored `accountKey` matches a new account's identifier.
+   * After a reauthorize, TrueLayer may issue new account ids for the same
+   * bank accounts. System accounts already on this connection get their
+   * externalId migrated when their stored `accountKey` matches a new
+   * account's identifier.
    */
   private async updateExistingAccountExternalIds({
     connectionId,
     newAccounts,
   }: {
     connectionId: string;
-    newAccounts: TrueLayerApiAccount[];
+    newAccounts: TrueLayerAccount[];
   }): Promise<void> {
     const existing = await Accounts.findAll({
       where: { bankDataProviderConnectionId: connectionId },
     });
     const newIds = new Set(newAccounts.map((a) => a.id));
-    const byKey = new Map<string, TrueLayerApiAccount>();
+    const byKey = new Map<string, TrueLayerAccount>();
     for (const account of newAccounts) {
       const key = this.accountIdentifierKey(account);
       if (key) byKey.set(key, account);
@@ -770,25 +613,17 @@ export class TrueLayerProvider extends BaseBankDataProvider {
     const apiClient = new TrueLayerApiClient(ctx.credentials);
 
     const { from, to } = this.resolveRange(dateRange);
-    const transactions =
-      ctx.apiVersion === 'v1'
-        ? await apiClient.v1GetTransactions({
-            userToken: ctx.userToken,
-            accountId: accountExternalId,
-            from,
-            to,
-          })
-        : await apiClient.getTransactions({
-            connectionId: ctx.tlConnectionId,
-            accountId: accountExternalId,
-            from,
-            to,
-          });
+    const transactions = await apiClient.getTransactions({
+      userToken: ctx.userToken,
+      accountId: accountExternalId,
+      from,
+      to,
+    });
 
     return transactions.filter((tx) => tx.status === 'settled').map((tx) => this.toProviderTransaction(tx));
   }
 
-  private toProviderTransaction(tx: TrueLayerApiTransaction): ProviderTransaction {
+  private toProviderTransaction(tx: TrueLayerTransaction): ProviderTransaction {
     return {
       externalId: tx.id,
       amount: asCents(centsFromMinorUnits(tx.amount_in_minor, tx.currency)),
@@ -865,11 +700,10 @@ export class TrueLayerProvider extends BaseBankDataProvider {
           createFromDate,
         });
 
-        let fetched: TrueLayerApiTransaction[];
+        let fetched: TrueLayerTransaction[];
         try {
-          fetched = await this.fetchTransactionsFor({
-            ctx,
-            apiClient,
+          fetched = await apiClient.getTransactions({
+            userToken: ctx.userToken,
             accountId: account.externalId,
             from,
             to,
@@ -898,11 +732,7 @@ export class TrueLayerProvider extends BaseBankDataProvider {
 
         // Authoritative end-of-sync balance from the dedicated endpoint.
         try {
-          const balanceResponse = await this.fetchBalanceFor({
-            ctx,
-            apiClient,
-            accountId: account.externalId,
-          });
+          const balanceResponse = await apiClient.getAccountBalance(ctx.userToken, account.externalId);
           await writeBankBalanceWithHistory({
             account,
             balance: Money.fromCents(
@@ -967,11 +797,10 @@ export class TrueLayerProvider extends BaseBankDataProvider {
           createFromDate: clampSyncStartToLink({ account, from }),
         });
 
-        let fetched: TrueLayerApiTransaction[];
+        let fetched: TrueLayerTransaction[];
         try {
-          fetched = await this.fetchTransactionsFor({
-            ctx,
-            apiClient,
+          fetched = await apiClient.getTransactions({
+            userToken: ctx.userToken,
             accountId: account.externalId,
             from,
             to,
@@ -1007,11 +836,7 @@ export class TrueLayerProvider extends BaseBankDataProvider {
   async fetchBalance(connectionId: string, accountExternalId: string): Promise<ProviderBalance> {
     const ctx = await this.getAuthorizationContext(connectionId);
     const apiClient = new TrueLayerApiClient(ctx.credentials);
-    const balance = await this.fetchBalanceFor({
-      ctx,
-      apiClient,
-      accountId: accountExternalId,
-    });
+    const balance = await apiClient.getAccountBalance(ctx.userToken, accountExternalId);
 
     return {
       amount: asCents(centsFromMinorUnits(balance.current_balance_in_minor ?? 0, balance.currency)),
@@ -1058,7 +883,7 @@ export class TrueLayerProvider extends BaseBankDataProvider {
     matchPlanned: boolean;
     createFromDate: Date;
   }): Promise<{
-    persist: (transactions: TrueLayerApiTransaction[]) => Promise<void>;
+    persist: (transactions: TrueLayerTransaction[]) => Promise<void>;
     counters: () => PersisterCounters;
   }> {
     const defaultCategoryId = await getUserDefaultCategory({
@@ -1072,7 +897,7 @@ export class TrueLayerProvider extends BaseBankDataProvider {
       userId: connection.userId,
     });
 
-    const persist = async (transactions: TrueLayerApiTransaction[]): Promise<void> => {
+    const persist = async (transactions: TrueLayerTransaction[]): Promise<void> => {
       // Persist in ledger order so planned-merge sees transactions ascending.
       const ascending = [...transactions].toSorted(
         (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
@@ -1161,7 +986,7 @@ export class TrueLayerProvider extends BaseBankDataProvider {
     };
   }
 
-  private transactionMetadata(tx: TrueLayerApiTransaction): Record<string, unknown> {
+  private transactionMetadata(tx: TrueLayerTransaction): Record<string, unknown> {
     return {
       tlStatus: tx.status,
       amountInMinor: tx.amount_in_minor,
@@ -1205,106 +1030,28 @@ export class TrueLayerProvider extends BaseBankDataProvider {
   }
 
   /**
-   * Credentials + whatever the next data call needs to authorize: a v3
-   * Connection-Id, or a fresh (refreshed-and-persisted) v1 user bearer.
+   * Credentials + whatever the next data call needs to authorize: a fresh
+   * (refreshed-and-persisted) user bearer.
    */
-  private async getAuthorizationContext(connectionId: string): Promise<
-    | {
-        apiVersion: 'v3';
-        credentials: TrueLayerCredentials;
-        tlConnectionId: string;
-      }
-    | { apiVersion: 'v1'; credentials: TrueLayerCredentials; userToken: string }
-  > {
+  private async getAuthorizationContext(connectionId: string): Promise<{
+    credentials: TrueLayerCredentials;
+    userToken: string;
+  }> {
     const credentials = await this.getValidatedCredentials(connectionId);
     const connection = await this.getConnection(connectionId);
-    const metadata = connection.metadata as TrueLayerMetadata;
 
-    if (metadata.apiVersion === 'v1') {
-      try {
-        const userToken = await this.ensureV1UserToken({
-          connection,
-          credentials,
-        });
-        return { apiVersion: 'v1', credentials, userToken };
-      } catch (error) {
-        // A dead refresh token must deactivate the connection (reconnect UX),
-        // exactly like a data-plane consent failure.
-        await this.handleProviderError({ connectionId, error });
-        throw error;
-      }
-    }
-
-    if (!metadata.tlConnectionId) {
-      throw new BadRequestError({
-        message: t({ key: 'bankDataProviders.truelayer.noActiveConnection' }),
+    try {
+      const userToken = await this.ensureV1UserToken({
+        connection,
+        credentials,
       });
+      return { credentials, userToken };
+    } catch (error) {
+      // A dead refresh token must deactivate the connection (reconnect UX),
+      // exactly like a data-plane consent failure.
+      await this.handleProviderError({ connectionId, error });
+      throw error;
     }
-
-    return {
-      apiVersion: 'v3',
-      credentials,
-      tlConnectionId: metadata.tlConnectionId,
-    };
-  }
-
-  /** Transactions for either API generation, paging included. */
-  private async fetchTransactionsFor({
-    ctx,
-    apiClient,
-    accountId,
-    from,
-    to,
-    onPage,
-  }: {
-    ctx: Awaited<ReturnType<TrueLayerProvider['getAuthorizationContext']>>;
-    apiClient: TrueLayerApiClient;
-    accountId: string;
-    from: Date;
-    to: Date;
-    onPage?: (transactions: TrueLayerApiTransaction[]) => void | Promise<void>;
-  }): Promise<TrueLayerApiTransaction[]> {
-    return ctx.apiVersion === 'v1'
-      ? apiClient.v1GetTransactions({
-          userToken: ctx.userToken,
-          accountId,
-          from,
-          to,
-          onPage,
-        })
-      : apiClient.getTransactions({
-          connectionId: ctx.tlConnectionId,
-          accountId,
-          from,
-          to,
-          onPage,
-        });
-  }
-
-  /** Balance for either API generation, normalized to the v3 minor-unit shape. */
-  private async fetchBalanceFor({
-    ctx,
-    apiClient,
-    accountId,
-  }: {
-    ctx: Awaited<ReturnType<TrueLayerProvider['getAuthorizationContext']>>;
-    apiClient: TrueLayerApiClient;
-    accountId: string;
-  }): Promise<TrueLayerApiBalanceResponse> {
-    return ctx.apiVersion === 'v1'
-      ? apiClient.v1GetAccountBalance(ctx.userToken, accountId)
-      : apiClient.getAccountBalance({
-          connectionId: ctx.tlConnectionId,
-          accountId,
-        });
-  }
-
-  /** End-user identity TrueLayer requires for consent capture: name + email. */
-  private async getEndUser(userId: number): Promise<{ name: string; email: string | null }> {
-    const user = await Users.findByPk(userId, { attributes: ['username'] });
-    const name = (user?.username ?? '').replace(/[()]/g, '').trim() || 'MoneyMatter user';
-    const email = await getEmailForUser({ userId });
-    return { name, email };
   }
 
   /**

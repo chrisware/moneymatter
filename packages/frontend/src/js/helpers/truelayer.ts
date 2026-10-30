@@ -4,10 +4,10 @@
  */
 
 /**
- * Parse what the user pasted to confirm a legacy v1 journey: either the full
- * URL TrueLayer redirected to (its confirmation page carries code+state) or a
- * bare authorization code. For a bare code the CSRF `state` is taken from the
- * stored authorization link, since that is what TrueLayer echoes back.
+ * Parse what the user pasted to confirm a manual-return journey: either the
+ * full URL TrueLayer redirected to (its confirmation page carries code+state)
+ * or a bare authorization code. For a bare code the CSRF `state` is taken from
+ * the stored authorization link, since that is what TrueLayer echoes back.
  */
 export function parseTrueLayerConfirmation(
   pasted: string,

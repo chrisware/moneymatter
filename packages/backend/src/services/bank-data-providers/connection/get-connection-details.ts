@@ -55,8 +55,6 @@ export interface ConnectionDetailsResponse {
   deactivationReason?: string | null;
   /** TrueLayer manual-return mode: journey ends on TrueLayer's console page. */
   manualReturn?: boolean;
-  /** TrueLayer Data API generation ('v3' | 'v1'); other providers null. */
-  apiVersion?: string | null;
   /** Hosted authorization page while a journey is pending (reconnect flows). */
   authUrl?: string | null;
 }
@@ -127,7 +125,6 @@ export async function getConnectionDetails(params: GetConnectionDetailsParams): 
     consent: consentInfo,
     deactivationReason: metadata?.deactivationReason || null,
     manualReturn: metadata?.manualReturn === true,
-    apiVersion: metadata?.apiVersion ?? null,
     // Hosted authorization page for a not-yet-completed journey (reconnect).
     authUrl: metadata?.authUrl ?? null,
   };

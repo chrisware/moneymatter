@@ -244,9 +244,8 @@
           </UiButton>
         </div>
 
-        <!-- TrueLayer manual-return mode: the journey ends on TrueLayer's own
-             redirect page, so completion is confirmed from here. v1 journeys
-             additionally need the redirected URL pasted (OAuth code). -->
+        <!-- TrueLayer journey awaiting confirmation: reopen the hosted link,
+             then paste the redirect URL (or bare code) to exchange it. -->
         <div
           v-if="isPendingManualAuthorization"
           class="border-primary/25 bg-primary/5 mt-3 rounded-lg border px-3 py-2.5 text-sm"
@@ -262,22 +261,22 @@
               </UiButton>
               <UiButton
                 size="sm"
-                :disabled="isManualAuthPending || (isV1ManualAuthorization && !manualRedirectUrl.trim())"
+                :disabled="isManualAuthPending || !manualRedirectUrl.trim()"
                 @click="handleManualAuthConfirm"
               >
                 {{ $t('pages.integrations.details.manualAuth.confirmButton') }}
               </UiButton>
             </div>
           </div>
-          <div v-if="isV1ManualAuthorization" class="mt-2">
+          <div class="mt-2">
             <InputField
               v-model="manualRedirectUrl"
               type="text"
-              :label="$t('pages.integrations.trueLayerConnector.v1PasteLabel')"
-              :placeholder="$t('pages.integrations.trueLayerConnector.v1PastePlaceholder')"
+              :label="$t('pages.integrations.trueLayerConnector.pasteCodeLabel')"
+              :placeholder="$t('pages.integrations.trueLayerConnector.pasteCodePlaceholder')"
             />
             <div class="text-muted-foreground mt-1 text-xs">
-              {{ $t('pages.integrations.trueLayerConnector.v1PasteHint') }}
+              {{ $t('pages.integrations.trueLayerConnector.pasteCodeHint') }}
             </div>
           </div>
         </div>
@@ -907,22 +906,16 @@ const handleReconnect = async () => {
 
 const isManualAuthPending = ref(false);
 
-// TrueLayer connection awaiting its authorization journey: manual-return
-// journeys always confirm here; legacy v1 journeys can also be completed
-// from the details page when the automatic redirect landed but the exchange
-// failed (the confirmation page URL carries the OAuth code).
+// TrueLayer connection awaiting its authorization journey: the strip lets the
+// user reopen the hosted link and complete it from here by pasting the code or
+// the redirect URL (covers both manual-return journeys and auto-return journeys
+// whose automatic exchange failed).
 const isPendingManualAuthorization = computed(
   () =>
     !!connectionDetails.value &&
     connectionDetails.value.providerType === BANK_PROVIDER_TYPE.TRUELAYER &&
     !connectionDetails.value.isActive &&
-    connectionDetails.value.deactivationReason == null &&
-    (connectionDetails.value.manualReturn === true || connectionDetails.value.apiVersion === 'v1'),
-);
-
-// Legacy v1 connections confirm by pasting the code or the redirect URL; v3 just polls.
-const isV1ManualAuthorization = computed(
-  () => isPendingManualAuthorization.value && connectionDetails.value?.apiVersion === 'v1',
+    connectionDetails.value.deactivationReason == null,
 );
 const manualRedirectUrl = ref('');
 
@@ -937,9 +930,7 @@ const handleManualAuthConfirm = async () => {
     isManualAuthPending.value = true;
     await completeTrueLayerAuthorization(
       connectionId.value,
-      isV1ManualAuthorization.value
-        ? parseTrueLayerConfirmation(manualRedirectUrl.value, connectionDetails.value?.authUrl ?? undefined)
-        : undefined,
+      parseTrueLayerConfirmation(manualRedirectUrl.value, connectionDetails.value?.authUrl ?? undefined),
     );
     localStorage.removeItem('pendingTrueLayerConnectionId');
     addSuccessNotification(t('pages.integrations.details.manualAuth.confirmed'));
