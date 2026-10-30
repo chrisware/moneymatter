@@ -1,18 +1,9 @@
 import { HttpResponse, http } from 'msw';
 
 import {
-  TRUELAYER_ACCOUNT_NO_TX_ID,
-  TRUELAYER_BALANCES_MINOR,
-  TRUELAYER_CONNECTION_ID,
   TRUELAYER_V1_BALANCES_MAJOR,
   TRUELAYER_V1_CARD_ID,
-  getMockedTrueLayerAccountsResponse,
-  getMockedTrueLayerBalanceResponse,
-  getMockedTrueLayerCreateConnectionResponse,
-  getMockedTrueLayerPaymentsOnlyTokenResponse,
   getMockedTrueLayerTokenResponse,
-  getMockedTrueLayerTransactionsRequestResponse,
-  getMockedTrueLayerTransactionsResultResponse,
   getMockedTrueLayerV1BalanceResponse,
   getMockedTrueLayerV1AccountsResponse,
   getMockedTrueLayerV1CardsResponse,
@@ -24,7 +15,7 @@ export const VALID_TL_CLIENT_ID = 'valid-truelayer-client-id';
 export const VALID_TL_CLIENT_SECRET = 'valid-truelayer-client-secret';
 export const INVALID_TL_CLIENT_SECRET = 'invalid-truelayer-client-secret';
 
-/** v1 authorization codes the mock exchange accepts / rejects. */
+/** Authorization codes the mock exchange accepts / rejects. */
 export const VALID_TL_V1_CODE = 'valid-v1-auth-code';
 export const VALID_TL_V1_REFRESH_TOKEN = 'tl-v1-refresh-token';
 export const ROTATED_TL_V1_REFRESH_TOKEN = 'tl-v1-refresh-token-rotated';
@@ -32,8 +23,6 @@ export const EXPIRED_TL_V1_REFRESH_TOKEN = 'expired-v1-refresh-token';
 
 export const TL_AUTH_BASE_URL = 'https://auth.truelayer.com';
 export const TL_API_BASE_URL = 'https://api.truelayer.com';
-
-const ACCOUNTS_URL = `${TL_API_BASE_URL}/v3/connected-accounts`;
 
 const problem = (status: number, title: string, description?: string) =>
   HttpResponse.json(
@@ -47,17 +36,14 @@ const problem = (status: number, title: string, description?: string) =>
     { status },
   );
 
+/** User bearers from the fixture token responses (initial + rotated). */
 const isAuthorizedBearer = (request: Request): boolean =>
-  (request.headers.get('authorization') ?? '').startsWith('Bearer ey');
-
-/** v1 user bearers from the fixture token responses (mock JWTs and rotated). */
-const isV1AuthorizedBearer = (request: Request): boolean =>
   (request.headers.get('authorization') ?? '').startsWith('Bearer tl-v1-access-token');
 
-/** The live v1 API answers 400 "Invalid date range provided." when `from` is
+/** The live API answers 400 "Invalid date range provided." when `from` is
  * more than ~1 year in the past — banks never serve that much history. One
  * day of slack so the provider's own 365-day default window passes. */
-const v1RangeTooWide = (request: Request): boolean => {
+const rangeTooWide = (request: Request): boolean => {
   const from = new URL(request.url).searchParams.get('from');
   return !!from && Date.now() - new Date(from).getTime() > 366 * 24 * 60 * 60 * 1000;
 };
@@ -65,21 +51,6 @@ const v1RangeTooWide = (request: Request): boolean => {
 /**
  * Explicit one-off overrides for tests (registration order: these run before the defaults).
  */
-export const getTrueLayerAccountsMock = ({
-  response,
-}: {
-  response: ReturnType<typeof getMockedTrueLayerAccountsResponse>;
-}) => http.get(ACCOUNTS_URL, () => HttpResponse.json(response));
-
-/** Connection-Id whose bank-side authorization hasn't completed (or expired). */
-export const getTrueLayerPendingAccountsMock = () =>
-  http.get(ACCOUNTS_URL, () => problem(400, 'invalid_state', 'the connection must be authorized for this request'));
-
-/** Simulate a Console app without the Data product: token lacks connections access. */
-export const getTrueLayerPaymentsOnlyTokenMock = () =>
-  http.post(`${TL_AUTH_BASE_URL}/connect/token`, () =>
-    HttpResponse.json(getMockedTrueLayerPaymentsOnlyTokenResponse()),
-  );
 
 /** Apps predating the unified auth server: refresh on /connect/token 404s and
  * must fall back to the legacy api/token endpoint (still served here). */
@@ -92,22 +63,7 @@ export const getTrueLayerV1RefreshUnsupportedMock = () =>
     return HttpResponse.json(getMockedTrueLayerTokenResponse());
   });
 
-/** Override the poll result of a transactions request (completed/failed/pending shape). */
-export const getTrueLayerTransactionsResultMock = ({
-  response,
-}: {
-  response:
-    | ReturnType<typeof getMockedTrueLayerTransactionsResultResponse>
-    | ReturnType<typeof getMockedTrueLayerTransactionsRequestResponse>;
-}) => http.get(`${ACCOUNTS_URL}/:accountId/transactions/requests/:requestId`, () => HttpResponse.json(response));
-
-/** Make the transactions request POST itself fail (provider outage mid-sync). */
-export const getTrueLayerTransactionsRequestErrorMock = ({ status = 503 }: { status?: number } = {}) =>
-  http.post(`${ACCOUNTS_URL}/:accountId/transactions/requests`, () =>
-    problem(status, status === 503 ? 'provider_error' : 'bad_request', 'provider temporarily unavailable'),
-  );
-
-/** v1: consent expired/revoked — data endpoints answer 403 access_denied. */
+/** Consent expired/revoked — data endpoints answer 403 access_denied. */
 export const getTrueLayerV1ConsentDeadMock = () => [
   http.get(`${TL_API_BASE_URL}/data/v1/accounts`, () => HttpResponse.json({ error: 'access_denied' }, { status: 403 })),
   http.get(`${TL_API_BASE_URL}/data/v1/accounts/:accountId/balance`, () =>
@@ -118,14 +74,14 @@ export const getTrueLayerV1ConsentDeadMock = () => [
   ),
 ];
 
-/** v1: override the transaction rows served for any account. */
+/** Override the transaction rows served for any account. */
 export const getTrueLayerV1TransactionsResultMock = ({
   response,
 }: {
   response: ReturnType<typeof getMockedTrueLayerV1TransactionsResponse>;
 }) => http.get(`${TL_API_BASE_URL}/data/v1/accounts/:accountId/transactions`, () => HttpResponse.json(response));
 
-/** v1: two Link-header pages; first row on page 1 is `dupTx`, repeated on page 2. */
+/** Two Link-header pages; first row on page 1 is `dupTx`, repeated on page 2. */
 export const getTrueLayerV1PagedTransactionsMock = ({ accountId, dupTxId }: { accountId: string; dupTxId: string }) => {
   const page1 = {
     results: [
@@ -172,7 +128,7 @@ export const getTrueLayerV1PagedTransactionsMock = ({ accountId, dupTxId }: { ac
   });
 };
 
-/** Token endpoints accept JSON (client_credentials) or form-encoded (v1 grants). */
+/** Token endpoints accept JSON (client_credentials) or form-encoded (OAuth grants). */
 const readTokenBody = async (request: { text: () => Promise<string> }): Promise<Record<string, string>> => {
   const raw = await request.text();
   if (raw.trim().startsWith('{')) {
@@ -181,8 +137,8 @@ const readTokenBody = async (request: { text: () => Promise<string> }): Promise<
   return Object.fromEntries(new URLSearchParams(raw));
 };
 
-/** Shared v1 refresh response: fixture tokens, rotation semantics. */
-const v1RefreshResponse = (refreshToken?: string) => {
+/** Shared refresh response: fixture tokens, rotation semantics. */
+const refreshResponse = (refreshToken?: string) => {
   if (refreshToken === EXPIRED_TL_V1_REFRESH_TOKEN) {
     return HttpResponse.json({ error: 'invalid_grant', error_description: 'refresh token expired' }, { status: 400 });
   }
@@ -199,8 +155,8 @@ const v1RefreshResponse = (refreshToken?: string) => {
 
 export const trueLayerHandlers = [
   // POST /connect/token — the auth server handling all grants: JSON
-  // client_credentials (app token, v3) and form-encoded authorization_code /
-  // refresh_token (legacy v1), mirroring the real endpoint.
+  // client_credentials (app token probe) and form-encoded authorization_code /
+  // refresh_token, mirroring the real endpoint.
   http.post(`${TL_AUTH_BASE_URL}/connect/token`, async ({ request }) => {
     const body = await readTokenBody(request);
     const { client_id, client_secret, grant_type } = body;
@@ -220,58 +176,9 @@ export const trueLayerHandlers = [
       }
       return HttpResponse.json(getMockedTrueLayerV1TokenResponse());
     }
-    if (grant_type === 'refresh_token') return v1RefreshResponse(body.refresh_token);
+    if (grant_type === 'refresh_token') return refreshResponse(body.refresh_token);
     return HttpResponse.json({ error: 'unsupported_grant_type' }, { status: 400 });
   }),
-
-  // POST /v3/data-connections — start an authorization journey.
-  http.post(`${TL_API_BASE_URL}/v3/data-connections`, ({ request }) => {
-    if (!isAuthorizedBearer(request)) return problem(401, 'unauthenticated');
-    return HttpResponse.json(getMockedTrueLayerCreateConnectionResponse(), {
-      status: 201,
-    });
-  }),
-
-  // GET /v3/connected-accounts — the default treats the fixture Connection-Id
-  // as authorized; tests override for pending/failed journeys.
-  http.get(ACCOUNTS_URL, ({ request }) => {
-    if (!isAuthorizedBearer(request)) return problem(401, 'unauthenticated');
-    if (request.headers.get('connection-id') !== TRUELAYER_CONNECTION_ID) return problem(400, 'invalid_state');
-    return HttpResponse.json(getMockedTrueLayerAccountsResponse());
-  }),
-
-  // GET /v3/connected-accounts/:id/balance
-  http.get(new RegExp(`${ACCOUNTS_URL}/[^/]+/balance$`), ({ request }) => {
-    if (!isAuthorizedBearer(request)) return problem(401, 'unauthenticated');
-    if (request.headers.get('connection-id') !== TRUELAYER_CONNECTION_ID) return problem(400, 'invalid_state');
-    const path = new URL(request.url).pathname;
-    const accountId = path.split('/')[3] ?? '';
-    if (!(accountId in TRUELAYER_BALANCES_MINOR)) return problem(404, 'not_found', 'unknown account id');
-    return HttpResponse.json(getMockedTrueLayerBalanceResponse(accountId));
-  }),
-
-  // POST /v3/connected-accounts/:id/transactions/requests — async request kickoff.
-  http.post(new RegExp(`${ACCOUNTS_URL}/[^/]+/transactions/requests$`), ({ request }) => {
-    if (!isAuthorizedBearer(request)) return problem(401, 'unauthenticated');
-    if (request.headers.get('connection-id') !== TRUELAYER_CONNECTION_ID) return problem(400, 'invalid_state');
-    return HttpResponse.json(getMockedTrueLayerTransactionsRequestResponse(), { status: 202 });
-  }),
-
-  // GET /v3/connected-accounts/:id/transactions/requests/:requestId — the
-  // default answers `completed` immediately (async model), with the account's
-  // 5 fixture rows.
-  http.get(`${ACCOUNTS_URL}/:accountId/transactions/requests/:requestId`, ({ request, params }) => {
-    if (!isAuthorizedBearer(request)) return problem(401, 'unauthenticated');
-    if (request.headers.get('connection-id') !== TRUELAYER_CONNECTION_ID) return problem(400, 'invalid_state');
-    const accountId = String(params.accountId ?? '');
-    const balanceMinor = TRUELAYER_BALANCES_MINOR[accountId];
-    if (balanceMinor === undefined) return problem(404, 'not_found', 'unknown account id');
-    if (accountId === TRUELAYER_ACCOUNT_NO_TX_ID)
-      return HttpResponse.json(getMockedTrueLayerTransactionsResultResponse(0, accountId));
-    return HttpResponse.json(getMockedTrueLayerTransactionsResultResponse(5, accountId));
-  }),
-
-  // ---- Legacy Data API v1 (Unified Data Model) ----------------------------
 
   // POST /token — legacy refresh endpoint kept as the api-client's fallback
   // when the auth server's /connect/token rejects the refresh grant.
@@ -280,16 +187,16 @@ export const trueLayerHandlers = [
     if (body.grant_type !== 'refresh_token') {
       return HttpResponse.json({ error: 'unsupported_grant_type' }, { status: 400 });
     }
-    return v1RefreshResponse(body.refresh_token);
+    return refreshResponse(body.refresh_token);
   }),
 
   http.get(`${TL_API_BASE_URL}/data/v1/accounts`, ({ request }) => {
-    if (!isV1AuthorizedBearer(request)) return HttpResponse.json({ error: 'access_denied' }, { status: 403 });
+    if (!isAuthorizedBearer(request)) return HttpResponse.json({ error: 'access_denied' }, { status: 403 });
     return HttpResponse.json(getMockedTrueLayerV1AccountsResponse());
   }),
 
   http.get(`${TL_API_BASE_URL}/data/v1/accounts/:accountId/balance`, ({ request, params }) => {
-    if (!isV1AuthorizedBearer(request)) return HttpResponse.json({ error: 'access_denied' }, { status: 403 });
+    if (!isAuthorizedBearer(request)) return HttpResponse.json({ error: 'access_denied' }, { status: 403 });
     const accountId = String(params.accountId ?? '');
     // Live API: a card id on the accounts resource path is a 400 (not 404).
     if (accountId === TRUELAYER_V1_CARD_ID) return problem(400, 'invalid_request', 'not an account id');
@@ -298,8 +205,8 @@ export const trueLayerHandlers = [
   }),
 
   http.get(`${TL_API_BASE_URL}/data/v1/accounts/:accountId/transactions`, ({ request, params }) => {
-    if (!isV1AuthorizedBearer(request)) return HttpResponse.json({ error: 'access_denied' }, { status: 403 });
-    if (v1RangeTooWide(request)) return problem(400, 'invalid_request', 'Invalid date range provided.');
+    if (!isAuthorizedBearer(request)) return HttpResponse.json({ error: 'access_denied' }, { status: 403 });
+    if (rangeTooWide(request)) return problem(400, 'invalid_request', 'Invalid date range provided.');
     const accountId = String(params.accountId ?? '');
     if (accountId === TRUELAYER_V1_CARD_ID) return problem(400, 'invalid_request', 'not an account id');
     if (!(accountId in TRUELAYER_V1_BALANCES_MAJOR)) return problem(404, 'not_found', 'unknown account id');
@@ -313,15 +220,15 @@ export const trueLayerHandlers = [
   ),
 
   http.get(`${TL_API_BASE_URL}/data/v1/cards/:accountId/balance`, ({ request, params }) => {
-    if (!isV1AuthorizedBearer(request)) return HttpResponse.json({ error: 'access_denied' }, { status: 403 });
+    if (!isAuthorizedBearer(request)) return HttpResponse.json({ error: 'access_denied' }, { status: 403 });
     const accountId = String(params.accountId ?? '');
     if (accountId !== TRUELAYER_V1_CARD_ID) return problem(404, 'not_found', 'unknown card id');
     return HttpResponse.json(getMockedTrueLayerV1BalanceResponse(accountId));
   }),
 
   http.get(`${TL_API_BASE_URL}/data/v1/cards/:accountId/transactions`, ({ request, params }) => {
-    if (!isV1AuthorizedBearer(request)) return HttpResponse.json({ error: 'access_denied' }, { status: 403 });
-    if (v1RangeTooWide(request)) return problem(400, 'invalid_request', 'Invalid date range provided.');
+    if (!isAuthorizedBearer(request)) return HttpResponse.json({ error: 'access_denied' }, { status: 403 });
+    if (rangeTooWide(request)) return problem(400, 'invalid_request', 'Invalid date range provided.');
     const accountId = String(params.accountId ?? '');
     if (accountId !== TRUELAYER_V1_CARD_ID) return problem(404, 'not_found', 'unknown card id');
     return HttpResponse.json(getMockedTrueLayerV1TransactionsResponse(3, accountId));
@@ -334,7 +241,7 @@ export const getTrueLayerV1CardsOnlyMock = () => [
     HttpResponse.json({ error: 'not_supported', message: 'Feature not supported by the provider' }, { status: 501 }),
   ),
   http.get(`${TL_API_BASE_URL}/data/v1/cards`, ({ request }) => {
-    if (!isV1AuthorizedBearer(request)) return HttpResponse.json({ error: 'access_denied' }, { status: 403 });
+    if (!isAuthorizedBearer(request)) return HttpResponse.json({ error: 'access_denied' }, { status: 403 });
     return HttpResponse.json(getMockedTrueLayerV1CardsResponse());
   }),
 ];

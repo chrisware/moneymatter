@@ -1,11 +1,16 @@
 /**
- * TrueLayer-specific types for the provider implementation (Data API v3).
+ * TrueLayer-specific types for the provider implementation (Legacy Data API v1).
  *
- * Data v3 model: an app-level `client_credentials` bearer token (scope `data`,
- * short-lived, silently refreshed) plus a per-user `Connection-Id` obtained by
- * creating a data connection and having the user complete TrueLayer's hosted
- * authorization journey. All monetary values are integers in the currency's
- * MINOR unit (pence for GBP) — unlike Akahu's signed decimals.
+ * v1 model: each MoneyMatter connection carries its own TrueLayer app
+ * credentials; the user authorizes one bank through TrueLayer's hosted
+ * authorization page (OAuth authorization-code + rotating refresh token).
+ * The bank data endpoints speak TrueLayer's Unified Data Model (UDM), which
+ * reports DECIMAL MAJOR units; the client maps those into the minor-unit
+ * shapes below so the provider's sync/persistence math stays integer-based
+ * (pence for GBP) — unlike Akahu's signed decimals.
+ *
+ * One authorization grant covers one bank; connecting a second bank means a
+ * second connection.
  *
  * Docs: https://docs.truelayer.com/docs/enable-your-users-to-connect-their-bank-account
  */
@@ -32,14 +37,6 @@ export interface TrueLayerCredentials {
    */
   manualReturn?: boolean;
   /**
-   * Data API generation. 'v3' (default) is the Connection-Id based Data API;
-   * 'v1' is the legacy OAuth authorization-code + refresh-token flow, for
-   * TrueLayer apps that were provisioned before Data v3 and lack the `data`
-   * scope. Mirrored into metadata; never read back from the encrypted blob
-   * except to carry the rotating per-user tokens below.
-   */
-  apiVersion?: TrueLayerApiVersion;
-  /**
    * Origin the frontend is served from (window.location.origin), sent with the
    * connect request so the OAuth redirect lands on the same origin that stored
    * the pending-connection id — localhost and 127.0.0.1 are distinct origins.
@@ -47,18 +44,20 @@ export interface TrueLayerCredentials {
    * the encrypted credentials.
    */
   redirectOrigin?: string;
-  /** Legacy v1 per-user bearer tokens — lives in the ENCRYPTED credentials column. */
-  v1Token?: TrueLayerV1StoredToken;
+  /**
+   * Per-user bearer tokens from the authorization-code exchange — lives in the
+   * ENCRYPTED credentials column. Key name kept stable across the v3 removal
+   * so already-paired connections keep working without a data migration.
+   */
+  v1Token?: TrueLayerStoredToken;
 }
 
-export type TrueLayerApiVersion = 'v3' | 'v1';
-
 /**
- * Rotating OAuth tokens for a v1 connection. TrueLayer rotates the refresh
+ * Rotating OAuth tokens for the connection. TrueLayer rotates the refresh
  * token on every renewal, so this must be persisted after each refresh; the
  * credentials column is the only encrypted-at-rest store on a connection.
  */
-export interface TrueLayerV1StoredToken {
+export interface TrueLayerStoredToken {
   accessToken: string;
   refreshToken: string;
   /** ISO timestamp when the bearer access token dies (incl. safety margin). */
@@ -66,24 +65,16 @@ export interface TrueLayerV1StoredToken {
 }
 
 /**
- * Connection metadata. `tlPendingConnectionId` + `authUrl` hold the
- * not-yet-authorized data connection (fresh connect or reauthorize); once the
- * user finishes the hosted journey and the callback confirms it, the pending
- * id is promoted to `tlConnectionId` and the consent window is stamped.
+ * Connection metadata. `tlPendingState` + `authUrl` hold the not-yet-completed
+ * authorization journey (fresh connect or reauthorize); once the callback
+ * exchanges the code, the journey fields clear and the consent window is
+ * stamped (~90 days, refreshed by reauthorize).
  */
 export interface TrueLayerMetadata {
-  /** Data API generation for this connection; absent means 'v3'. */
-  apiVersion?: TrueLayerApiVersion;
-  /** TrueLayer data-connection id with active consent (Connection-Id header). */
-  tlConnectionId?: string;
-  /** Data-connection id awaiting user authorization. */
-  tlPendingConnectionId?: string;
-  /** v1: CSRF/OAuth state embedded in the pending authorization link. */
+  /** CSRF/OAuth state embedded in the pending authorization link. */
   tlPendingState?: string;
-  /** v1: redirect_uri baked into the pending authorization link (must match at exchange). */
+  /** redirect_uri baked into the pending authorization link (must match at exchange). */
   tlV1RedirectUri?: string;
-  /** TrueLayer's end-user id — reused on reauthorize to keep returning-user journeys. */
-  tlUserId?: string;
   /** Hosted authorization-page URI for the pending connection. */
   authUrl?: string;
   /** Journey completes on TrueLayer's console redirect page; user confirms manually. */
@@ -92,7 +83,7 @@ export interface TrueLayerMetadata {
   tlRedirectOrigin?: string;
   accountCount?: number;
   /** Account summaries captured at authorization-confirm time. */
-  accounts?: TrueLayerApiAccount[];
+  accounts?: TrueLayerAccount[];
   consentValidFrom?: string | null;
   consentValidUntil?: string | null;
   consecutiveAuthFailures?: number;
@@ -100,21 +91,15 @@ export interface TrueLayerMetadata {
 }
 
 // ============================================================================
-// API payload types
+// Normalized payload shapes (minor units) — what the provider maps to
 // ============================================================================
 
-export interface TrueLayerApiAccessTokenResponse {
+/** App-level client_credentials token (used for the credential probe). */
+export interface TrueLayerAppTokenResponse {
   access_token: string;
   expires_in: number;
   token_type: string;
   scope?: string;
-}
-
-export interface TrueLayerApiCreatedConnection {
-  id: string;
-  user: { id: string };
-  status: 'authorization_required' | 'authorizing' | (string & {});
-  hosted_page?: { uri: string };
 }
 
 export type TrueLayerAccountIdentifier =
@@ -124,11 +109,11 @@ export type TrueLayerAccountIdentifier =
       account_number: string;
     }
   | { type: 'iban'; iban: string }
-  /** Cards report only the masked PAN tail (v1 /data/v1/cards rows). */
+  /** Cards report only the masked PAN tail (/cards rows). */
   | { type: 'card_pan_last4'; last_four: string };
 
-/** `account` and `card` share one shape today; cards lack currency in the schema. */
-export interface TrueLayerApiAccount {
+/** Normalized bank product row (accounts + cards merged). */
+export interface TrueLayerAccount {
   id: string;
   type: 'account' | 'card' | (string & {});
   currency?: string;
@@ -148,25 +133,14 @@ export interface TrueLayerApiAccount {
   account_holder_names?: string[];
 }
 
-export interface TrueLayerApiAccountsResponse {
-  items: TrueLayerApiAccount[];
-  pagination?: { next_cursor?: string | null };
-}
-
-export interface TrueLayerApiBalanceResponse {
+export interface TrueLayerBalanceResponse {
   currency: string;
   current_balance_in_minor: number;
   available_balance_in_minor?: number | null;
   overdraft_in_minor?: number | null;
 }
 
-/** 202 response of POST …/transactions/requests and the pending GET variant. */
-export interface TrueLayerTransactionsRequestPending {
-  id: string;
-  status: 'pending';
-}
-
-export interface TrueLayerApiTransaction {
+export interface TrueLayerTransaction {
   id: string;
   timestamp: string;
   description: string;
@@ -180,28 +154,7 @@ export interface TrueLayerApiTransaction {
   } | null;
 }
 
-export interface TrueLayerTransactionsRequestCompleted {
-  id: string;
-  status: 'completed';
-  completed_at?: string;
-  result: {
-    items: TrueLayerApiTransaction[];
-    pagination?: { next_cursor?: string | null };
-  };
-}
-
-export interface TrueLayerTransactionsRequestFailed {
-  id: string;
-  status: 'failed';
-  failure_reason?: string;
-}
-
-export type TrueLayerTransactionsRequestResult =
-  | TrueLayerTransactionsRequestPending
-  | TrueLayerTransactionsRequestCompleted
-  | TrueLayerTransactionsRequestFailed;
-
-/** RFC 7807 problem+json error body (v3) and OAuth error body (v1 endpoints). */
+/** RFC 7807 problem+json error body (data endpoints) and OAuth error body (token endpoints). */
 export interface TrueLayerProblemDetails {
   type?: string;
   title?: string;
@@ -209,21 +162,21 @@ export interface TrueLayerProblemDetails {
   trace_id?: string;
   detail?: string;
   errors?: Record<string, string[]>;
-  /** v1 token-endpoint OAuth shape: { error, error_description }. */
+  /** Token-endpoint OAuth shape: { error, error_description }. */
   error?: string;
   error_description?: string;
 }
 
 // ============================================================================
-// Legacy Data API v1 payload types (Unified Data Model)
+// Wire payload types (Unified Data Model, DECIMAL MAJOR units)
 // ============================================================================
 
 /**
  * Response of the auth server token endpoint (authorization_code and
- * rotates the refresh_token on renewal, hence `refresh_token` is consumed on
- * every response that carries one.
+ * refresh_token grants). TrueLayer rotates the refresh token on renewal,
+ * hence `refresh_token` is consumed on every response that carries one.
  */
-export interface TrueLayerV1TokenResponse {
+export interface TrueLayerTokenResponse {
   access_token: string;
   expires_in: number;
   refresh_token?: string;
@@ -235,15 +188,15 @@ export interface TrueLayerV1TokenResponse {
   currency?: string;
 }
 
-/** OAuth-style error body from the v1 token endpoints (not problem+json). */
-export interface TrueLayerV1OAuthError {
+/** OAuth-style error body from the token endpoints (not problem+json). */
+export interface TrueLayerOAuthError {
   error?: string;
   error_description?: string;
 }
 
 /** `GET /data/v1/accounts` and `GET /data/v1/cards` rows — card providers
  * (e.g. Amex) answer 501 on /accounts and only serve products on /cards. */
-export interface TrueLayerV1Account {
+export interface TrueLayerUdmAccount {
   account_id?: string;
   card_id?: string;
   display_name?: string;
@@ -265,12 +218,12 @@ export interface TrueLayerV1Account {
   update_timestamp?: string;
 }
 
-export interface TrueLayerV1AccountsResponse {
-  results: TrueLayerV1Account[];
+export interface TrueLayerUdmAccountsResponse {
+  results: TrueLayerUdmAccount[];
 }
 
-/** `GET /accounts/{id}/balance` row — amounts are DECIMAL MAJOR units. */
-export interface TrueLayerV1Balance {
+/** `GET /{accounts|cards}/{id}/balance` row — amounts are DECIMAL MAJOR units. */
+export interface TrueLayerUdmBalance {
   currency: string;
   current: number;
   available?: number;
@@ -278,12 +231,12 @@ export interface TrueLayerV1Balance {
   credit_limit?: number;
 }
 
-export interface TrueLayerV1BalancesResponse {
-  results: TrueLayerV1Balance[];
+export interface TrueLayerUdmBalancesResponse {
+  results: TrueLayerUdmBalance[];
 }
 
-/** `GET /accounts/{id}/transactions` row — `amount` is signed major units, negative = debit. */
-export interface TrueLayerV1Transaction {
+/** `GET /{accounts|cards}/{id}/transactions` row — `amount` is signed major units, negative = debit. */
+export interface TrueLayerUdmTransaction {
   transaction_id: string;
   /** Stable cross-request identifier when the provider supplies one. */
   normalised_provider_transaction_id?: string | null;
@@ -300,6 +253,6 @@ export interface TrueLayerV1Transaction {
   } | null;
 }
 
-export interface TrueLayerV1TransactionsResponse {
-  results: TrueLayerV1Transaction[];
+export interface TrueLayerUdmTransactionsResponse {
+  results: TrueLayerUdmTransaction[];
 }

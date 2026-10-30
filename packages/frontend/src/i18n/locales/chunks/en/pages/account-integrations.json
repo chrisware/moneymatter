@@ -352,14 +352,6 @@
         "returnModeManual": "Manual confirmation",
         "returnModeAutoHint": "TrueLayer sends you back to this app automatically. Requires your callback URL ({url}) to be registered in the TrueLayer Console.",
         "returnModeManualHint": "No Console setup needed: TrueLayer ends the journey on its own confirmation page, and you confirm back here.",
-        "apiVersionLabel": "Data API version",
-        "apiVersionV3": "Data API v3 (recommended)",
-        "apiVersionV1": "Legacy Data API v1",
-        "apiVersionV3Hint": "Current TrueLayer Data API. Requires an application with the Data product enabled and the `data` scope.",
-        "apiVersionV1Hint": "Legacy authorization-code API for apps without Data v3 access (pre-2025 TrueLayer applications). Syncs UK bank accounts and card products (e.g. American Express — the app needs the `cards` scope); re-authorization is needed every ~90 days.",
-        "v1PasteLabel": "Authorization code",
-        "v1PastePlaceholder": "Paste the code, or the full redirect URL",
-        "v1PasteHint": "TrueLayer's confirmation page shows the returned `code=...` — paste just the code, or the entire URL from the address bar (the URL also carries the matching `state`, so it's the safest option).",
         "openAuthTabButton": "Open authorization page",
         "confirmAuthButton": "I've completed authorization",
         "confirmingButton": "Confirming...",
@@ -378,7 +370,10 @@
         },
         "footer": {
           "openConsole": "Open console.truelayer.com"
-        }
+        },
+        "pasteCodeLabel": "Authorization code",
+        "pasteCodePlaceholder": "Paste the code, or the full redirect URL",
+        "pasteCodeHint": "TrueLayer's confirmation page shows the returned `code=...` — paste just the code, or the entire URL from the address bar (the URL also carries the matching `state`, so it's the safest option)."
       },
       "notifications": {
         "disconnectSuccess": "Integration disconnected successfully",
