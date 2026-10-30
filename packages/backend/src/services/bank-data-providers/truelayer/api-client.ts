@@ -393,8 +393,16 @@ export class TrueLayerApiClient {
         onPage,
       );
     } catch (error) {
-      if (!isV1UnsupportedPath(error)) throw error;
-      return await this.v1GetTransactionsPaged(userToken, `/data/v1/cards/${accountId}/transactions?${range}`, onPage);
+      if (!isV1UnsupportedPath(error)) throw this.handleApiError(error, 'v1GetTransactions');
+      try {
+        return await this.v1GetTransactionsPaged(
+          userToken,
+          `/data/v1/cards/${accountId}/transactions?${range}`,
+          onPage,
+        );
+      } catch (cardsError) {
+        throw this.handleApiError(cardsError, 'v1GetCardTransactions');
+      }
     }
   }
 
@@ -431,7 +439,7 @@ export class TrueLayerApiClient {
       return { ok: true, data: response.data };
     } catch (error) {
       const status = axios.isAxiosError(error) ? error.response?.status : undefined;
-      const unsupported = status === 404 || status === 501;
+      const unsupported = status === 400 || status === 404 || status === 501;
       return { ok: false, unsupported, error: this.handleApiError(error, method) };
     }
   }
@@ -858,9 +866,11 @@ const v1ProductToApiAccount = (row: TrueLayerV1Account, kind: 'accounts' | 'card
 });
 
 /** A raw (unmapped) v1 data error saying the provider doesn't serve that
- * product kind — the signal to retry the sibling endpoint. */
+ * product kind — the signal to retry the sibling endpoint. TrueLayer answers
+ * 501 (feature absent), 404 (unknown id) or 400 (id not an account/card of
+ * this kind) depending on the endpoint. */
 const isV1UnsupportedPath = (error: unknown): boolean =>
-  axios.isAxiosError(error) && (error.response?.status === 404 || error.response?.status === 501);
+  axios.isAxiosError(error) && [400, 404, 501].includes(error.response?.status ?? -1);
 
 const v1ProductIdentifiers = (account: TrueLayerV1Account, kind: 'accounts' | 'cards') => {
   if (kind === 'cards') {

@@ -796,7 +796,8 @@ describe('TrueLayer Data Provider E2E', () => {
         connectionId,
         accountId: TRUELAYER_V1_CARD_ID,
       });
-      // Balance + transactions resolved via the /data/v1/cards fallback.
+      // Balance + transactions resolve via the /data/v1/cards fallback: the
+      // accounts path answers 400 for a card id, matching the live API.
       expect(transactions.length).toBe(3);
       expect(transactions.every((t: { originalId: string }) => t.originalId.startsWith('np-v1tx-tlv1_card_amex'))).toBe(
         true,
