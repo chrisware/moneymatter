@@ -837,10 +837,19 @@ export class TrueLayerProvider extends BaseBankDataProvider {
           where: { accountId: account.id, time: { [Op.lte]: new Date() } },
         });
 
-        const from = anyStoredTransaction
-          ? new Date(new Date(anyStoredTransaction.time).getTime() - INCREMENTAL_OVERLAP_MS)
-          : new Date(Date.now() - INITIAL_HISTORY_DAYS * 24 * 60 * 60 * 1000);
         const to = new Date();
+        // TrueLayer rejects windows wider than ~1 year ("Invalid date range
+        // provided"), and banks serve far less history anyway. Relinks go
+        // through clampSyncStartToLink: pre-link history belongs to the
+        // residual absorb, never to a re-fetch that would choke on old dates.
+        const windowStart = new Date(Date.now() - INITIAL_HISTORY_DAYS * 24 * 60 * 60 * 1000);
+        const anchor = anyStoredTransaction
+          ? new Date(new Date(anyStoredTransaction.time).getTime() - INCREMENTAL_OVERLAP_MS)
+          : windowStart;
+        const from = clampSyncStartToLink({
+          account,
+          from: new Date(Math.max(anchor.getTime(), windowStart.getTime())),
+        });
 
         const matchPlanned = Boolean(anyStoredTransaction) && (await accountHasPlannedRows({ accountId: account.id }));
         // Initial import takes the full served window; incremental sync must not
