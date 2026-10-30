@@ -283,19 +283,17 @@ export const trueLayerHandlers = [
   http.get(`${TL_API_BASE_URL}/data/v1/accounts/:accountId/balance`, ({ request, params }) => {
     if (!isV1AuthorizedBearer(request)) return HttpResponse.json({ error: 'access_denied' }, { status: 403 });
     const accountId = String(params.accountId ?? '');
-    // Card products are served under /data/v1/cards only.
-    if (!(accountId in TRUELAYER_V1_BALANCES_MAJOR) || accountId === TRUELAYER_V1_CARD_ID) {
-      return problem(404, 'not_found', 'unknown account id');
-    }
+    // Live API: a card id on the accounts resource path is a 400 (not 404).
+    if (accountId === TRUELAYER_V1_CARD_ID) return problem(400, 'invalid_request', 'not an account id');
+    if (!(accountId in TRUELAYER_V1_BALANCES_MAJOR)) return problem(404, 'not_found', 'unknown account id');
     return HttpResponse.json(getMockedTrueLayerV1BalanceResponse(accountId));
   }),
 
   http.get(`${TL_API_BASE_URL}/data/v1/accounts/:accountId/transactions`, ({ request, params }) => {
     if (!isV1AuthorizedBearer(request)) return HttpResponse.json({ error: 'access_denied' }, { status: 403 });
     const accountId = String(params.accountId ?? '');
-    if (!(accountId in TRUELAYER_V1_BALANCES_MAJOR) || accountId === TRUELAYER_V1_CARD_ID) {
-      return problem(404, 'not_found', 'unknown account id');
-    }
+    if (accountId === TRUELAYER_V1_CARD_ID) return problem(400, 'invalid_request', 'not an account id');
+    if (!(accountId in TRUELAYER_V1_BALANCES_MAJOR)) return problem(404, 'not_found', 'unknown account id');
     return HttpResponse.json(getMockedTrueLayerV1TransactionsResponse(5, accountId));
   }),
 
