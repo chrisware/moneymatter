@@ -227,12 +227,6 @@ const ZodUiSettingsSchema = z.object({
   investmentTransactionsTable: ZodInvestmentTransactionsTableSettingsSchema.optional(),
 });
 
-// Subscription-related defaults. `defaultAutoRecord` only seeds the auto-record toggle on
-// the create-subscription form; the user can still override it per subscription.
-const ZodSubscriptionsSettingsSchema = z.object({
-  defaultAutoRecord: z.boolean().optional(),
-});
-
 // A category mapping remembered from a finished import, keyed by a fingerprint of the source
 // layout. Untrusted client input, so the per-value union is validated in full.
 const ZodCategoryMappingPresetSchema = z.object({
@@ -362,7 +356,6 @@ export const ZodSettingsSchema = z.object({
   sidebarSections: ZodSidebarSectionsSchema.optional(),
   sidebarNav: ZodSidebarNavSchema.optional(),
   ui: ZodUiSettingsSchema.optional(),
-  subscriptions: ZodSubscriptionsSettingsSchema.optional(),
   import: ZodImportSettingsSchema.optional(),
   accounts: ZodAccountsSettingsSchema.optional(),
   savedPivotViews: z.array(ZodSavedPivotViewSchema).optional(),
@@ -487,11 +480,6 @@ export const ZodSettingsPatchSchema = z.object({
           columnOrder: z.array(z.string()).optional(),
         })
         .optional(),
-    })
-    .optional(),
-  subscriptions: z
-    .object({
-      defaultAutoRecord: z.boolean().optional(),
     })
     .optional(),
   import: z

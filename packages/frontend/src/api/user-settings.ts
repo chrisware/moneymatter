@@ -83,12 +83,6 @@ export interface UiSettings {
   investmentTransactionsTable?: InvestmentTransactionsTableSettings;
 }
 
-export interface SubscriptionsSettings {
-  /** Seeds the auto-record toggle on the create-subscription form; the form
-   *  still lets the user override it per subscription. */
-  defaultAutoRecord?: boolean;
-}
-
 export interface UserSettingsSchema {
   locale?: SupportedLocale;
   dashboard?: {
@@ -127,7 +121,6 @@ export interface UserSettingsSchema {
   payday?: number;
   unrealizedLossAlerts?: UnrealizedLossAlertsSettings;
   ui?: UiSettings;
-  subscriptions?: SubscriptionsSettings;
   savedPivotViews?: SavedPivotView[];
   savedTransactionViews?: SavedTransactionView[];
   /** Header "Support" (donation) button visibility. Defaults to visible when unset. */
