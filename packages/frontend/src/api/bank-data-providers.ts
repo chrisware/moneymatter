@@ -76,6 +76,10 @@ interface BankConnectionDetails {
     isExpiringSoon: boolean;
   };
   deactivationReason?: string | null;
+  /** TrueLayer manual-return mode: journey ends on TrueLayer's console page. */
+  manualReturn?: boolean;
+  /** Hosted authorization page while a journey is pending (reconnect flows). */
+  authUrl?: string | null;
 }
 
 /**

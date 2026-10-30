@@ -11,11 +11,27 @@ export const TRUELAYER_ACCOUNT_2_ID = 'ca_gbp_savings';
 export const TRUELAYER_ACCOUNT_NO_TX_ID = 'ca_gbp_no_tx';
 export const TRUELAYER_CARD_ID = 'ca_gbp_card';
 
+/** Base64url JWT with the given claims (signature is a placeholder). */
+const mockJwt = (claims: Record<string, unknown>) =>
+  ['eyJhbGciOiJSUzI1NiJ9', Buffer.from(JSON.stringify(claims)).toString('base64url'), 'mock-sig'].join('.');
+
 export const getMockedTrueLayerTokenResponse = ({ expiresIn = 900 }: { expiresIn?: number } = {}) => ({
-  access_token: 'mock-tl-app-access-token',
+  // A properly provisioned Data app: decodable claims with connections access.
+  access_token: mockJwt({
+    scope: ['accounts', 'balance', 'transactions', 'connections:create'],
+    aud: 'connections_api',
+  }),
   token_type: 'Bearer',
   expires_in: expiresIn,
-  scope: 'data',
+  scope: 'accounts balance transactions',
+});
+
+/** Token from an app WITHOUT the Data product (payments scopes only). */
+export const getMockedTrueLayerPaymentsOnlyTokenResponse = () => ({
+  access_token: mockJwt({ scope: ['payments', 'payments:read'], aud: 'payments_api' }),
+  token_type: 'Bearer',
+  expires_in: 3600,
+  scope: 'payments',
 });
 
 export const getMockedTrueLayerCreateConnectionResponse = ({

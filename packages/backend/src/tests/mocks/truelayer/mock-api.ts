@@ -7,6 +7,7 @@ import {
   getMockedTrueLayerAccountsResponse,
   getMockedTrueLayerBalanceResponse,
   getMockedTrueLayerCreateConnectionResponse,
+  getMockedTrueLayerPaymentsOnlyTokenResponse,
   getMockedTrueLayerTokenResponse,
   getMockedTrueLayerTransactionsRequestResponse,
   getMockedTrueLayerTransactionsResultResponse,
@@ -15,7 +16,6 @@ import {
 export const VALID_TL_CLIENT_ID = 'valid-truelayer-client-id';
 export const VALID_TL_CLIENT_SECRET = 'valid-truelayer-client-secret';
 export const INVALID_TL_CLIENT_SECRET = 'invalid-truelayer-client-secret';
-export const MOCK_TL_ACCESS_TOKEN = 'mock-tl-app-access-token';
 
 export const TL_AUTH_BASE_URL = 'https://auth.truelayer.com';
 export const TL_API_BASE_URL = 'https://api.truelayer.com';
@@ -35,7 +35,7 @@ const problem = (status: number, title: string, description?: string) =>
   );
 
 const isAuthorizedBearer = (request: Request): boolean =>
-  request.headers.get('authorization') === `Bearer ${MOCK_TL_ACCESS_TOKEN}`;
+  (request.headers.get('authorization') ?? '').startsWith('Bearer ey');
 
 /**
  * Explicit one-off overrides for tests (registration order: these run before the defaults).
@@ -49,6 +49,12 @@ export const getTrueLayerAccountsMock = ({
 /** Connection-Id whose bank-side authorization hasn't completed (or expired). */
 export const getTrueLayerPendingAccountsMock = () =>
   http.get(ACCOUNTS_URL, () => problem(400, 'invalid_state', 'the connection must be authorized for this request'));
+
+/** Simulate a Console app without the Data product: token lacks connections access. */
+export const getTrueLayerPaymentsOnlyTokenMock = () =>
+  http.post(`${TL_AUTH_BASE_URL}/connect/token`, () =>
+    HttpResponse.json(getMockedTrueLayerPaymentsOnlyTokenResponse()),
+  );
 
 /** Override the poll result of a transactions request (completed/failed/pending shape). */
 export const getTrueLayerTransactionsResultMock = ({
@@ -66,15 +72,11 @@ export const getTrueLayerTransactionsRequestErrorMock = ({ status = 503 }: { sta
   );
 
 export const trueLayerHandlers = [
-  // POST /connect/token — client_credentials app token. Mirrors the real
-  // auth server: a `scope` parameter that isn't configured on the app is
-  // rejected, so the client must request tokens without one.
+  // POST /connect/token — client_credentials app token. Mirrors the real auth
+  // server: no scope parameter grants the app's full configured scope set.
   http.post(`${TL_AUTH_BASE_URL}/connect/token`, async ({ request }) => {
     const body = await request.json().catch(() => null);
-    const { client_id, client_secret, grant_type, scope } = (body ?? {}) as Record<string, string>;
-    if (scope) {
-      return HttpResponse.json({ error: 'invalid_scope' }, { status: 400 });
-    }
+    const { client_id, client_secret, grant_type } = (body ?? {}) as Record<string, string>;
     if (
       grant_type !== 'client_credentials' ||
       client_id !== VALID_TL_CLIENT_ID ||

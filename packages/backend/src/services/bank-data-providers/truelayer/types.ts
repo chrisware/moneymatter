@@ -23,6 +23,14 @@ export interface TrueLayerCredentials {
   clientSecret: string;
   /** Defaults to 'production'. */
   environment?: TrueLayerEnvironment;
+  /**
+   * When true the journey returns the user to TrueLayer's built-in console
+   * redirect page instead of this instance's /bank-callback URL — self-hosters
+   * on plain http (which TrueLayer won't accept as a Redirect URI) authorize
+   * there and confirm manually from MoneyMatter. Not persisted with the
+   * encrypted credentials; mirrored into metadata instead.
+   */
+  manualReturn?: boolean;
 }
 
 /**
@@ -40,6 +48,8 @@ export interface TrueLayerMetadata {
   tlUserId?: string;
   /** Hosted authorization-page URI for the pending connection. */
   authUrl?: string;
+  /** Journey completes on TrueLayer's console redirect page; user confirms manually. */
+  manualReturn?: boolean;
   accountCount?: number;
   /** Account summaries captured at authorization-confirm time. */
   accounts?: TrueLayerApiAccount[];

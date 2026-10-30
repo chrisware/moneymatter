@@ -228,6 +228,24 @@
           </UiButton>
         </div>
 
+        <!-- TrueLayer manual-return mode: the journey ends on TrueLayer's own
+             redirect page, so completion is confirmed from here. -->
+        <div
+          v-if="isPendingManualAuthorization"
+          class="border-primary/25 bg-primary/5 mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border px-3 py-2.5 text-sm"
+        >
+          <CircleAlertIcon class="size-4 shrink-0" />
+          <p class="min-w-40 flex-1">{{ $t('pages.integrations.details.manualAuth.description') }}</p>
+          <div class="flex gap-2">
+            <UiButton variant="outline" size="sm" :disabled="isManualAuthPending" @click="handleManualAuthOpen">
+              {{ $t('pages.integrations.details.manualAuth.openButton') }}
+            </UiButton>
+            <UiButton size="sm" :disabled="isManualAuthPending" @click="handleManualAuthConfirm">
+              {{ $t('pages.integrations.details.manualAuth.confirmButton') }}
+            </UiButton>
+          </div>
+        </div>
+
         <div class="mt-6 mb-2 flex min-h-8 flex-wrap items-center justify-between gap-2 px-1">
           <div class="flex items-center gap-2">
             <h2 class="text-muted-foreground text-xs font-semibold tracking-[0.14em] uppercase">
@@ -366,6 +384,7 @@
 <script lang="ts" setup>
 import {
   SyncStatus,
+  completeTrueLayerAuthorization,
   disconnectProvider,
   getAvailableAccounts,
   reauthorizeConnection,
@@ -817,6 +836,19 @@ const handleReconnect = async () => {
         : 'pendingEnableBankingConnectionId';
     localStorage.setItem(pendingKey, String(connectionId.value));
 
+    // TrueLayer manual-return journeys end on TrueLayer's own page; keep the
+    // app open and let the manual-authorization strip handle completion.
+    if (
+      connectionDetails.value?.providerType === BANK_PROVIDER_TYPE.TRUELAYER &&
+      connectionDetails.value?.manualReturn
+    ) {
+      window.open(response.authUrl, '_blank', 'noopener');
+      isReconnectPending.value = false;
+      isReconnectDialogOpen.value = false;
+      queryClient.invalidateQueries({ queryKey: [VUE_QUERY_GLOBAL_PREFIXES.bankConnectionChange] });
+      return;
+    }
+
     // Redirect to the authorization URL
     window.location.href = response.authUrl;
   } catch (err) {
@@ -824,6 +856,36 @@ const handleReconnect = async () => {
     isReconnectPending.value = false;
     isReconnectDialogOpen.value = false;
     addErrorNotification(message);
+  }
+};
+
+const isManualAuthPending = ref(false);
+
+// TrueLayer connection awaiting its manual-return authorization journey.
+const isPendingManualAuthorization = computed(
+  () =>
+    !!connectionDetails.value &&
+    connectionDetails.value.providerType === BANK_PROVIDER_TYPE.TRUELAYER &&
+    connectionDetails.value.manualReturn === true &&
+    !connectionDetails.value.isActive,
+);
+
+const handleManualAuthOpen = () => {
+  if (connectionDetails.value?.authUrl) {
+    window.open(connectionDetails.value.authUrl, '_blank', 'noopener');
+  }
+};
+
+const handleManualAuthConfirm = async () => {
+  try {
+    isManualAuthPending.value = true;
+    await completeTrueLayerAuthorization(connectionId.value);
+    addSuccessNotification(t('pages.integrations.details.manualAuth.confirmed'));
+    queryClient.invalidateQueries({ queryKey: [VUE_QUERY_GLOBAL_PREFIXES.bankConnectionChange] });
+  } catch (err) {
+    addErrorNotification(err instanceof Error ? err.message : t('pages.integrations.details.manualAuth.confirmFailed'));
+  } finally {
+    isManualAuthPending.value = false;
   }
 };
 </script>
