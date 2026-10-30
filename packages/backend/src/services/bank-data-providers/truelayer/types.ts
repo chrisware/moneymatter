@@ -39,6 +39,14 @@ export interface TrueLayerCredentials {
    * except to carry the rotating per-user tokens below.
    */
   apiVersion?: TrueLayerApiVersion;
+  /**
+   * Origin the frontend is served from (window.location.origin), sent with the
+   * connect request so the OAuth redirect lands on the same origin that stored
+   * the pending-connection id — localhost and 127.0.0.1 are distinct origins.
+   * Transient: mirrored into metadata (`tlRedirectOrigin`), not persisted with
+   * the encrypted credentials.
+   */
+  redirectOrigin?: string;
   /** Legacy v1 per-user bearer tokens — lives in the ENCRYPTED credentials column. */
   v1Token?: TrueLayerV1StoredToken;
 }
@@ -80,6 +88,8 @@ export interface TrueLayerMetadata {
   authUrl?: string;
   /** Journey completes on TrueLayer's console redirect page; user confirms manually. */
   manualReturn?: boolean;
+  /** App origin reported by the frontend at connect — reauthorize rebuilds the same redirect_uri. */
+  tlRedirectOrigin?: string;
   accountCount?: number;
   /** Account summaries captured at authorization-confirm time. */
   accounts?: TrueLayerApiAccount[];
@@ -207,7 +217,7 @@ export interface TrueLayerProblemDetails {
 // ============================================================================
 
 /**
- * Response of POST /exchange-oauth and /token (refresh_token grant). TrueLayer
+ * Response of the auth server token endpoint (authorization_code and
  * rotates the refresh_token on renewal, hence `refresh_token` is consumed on
  * every response that carries one.
  */

@@ -428,6 +428,7 @@ import {
   syncSelectedAccounts,
   updateConnectionDetails,
 } from '@/api/bank-data-providers';
+import { parseTrueLayerConfirmation } from '@/js/helpers/truelayer';
 import { VUE_QUERY_CACHE_KEYS, VUE_QUERY_GLOBAL_PREFIXES } from '@/common/const';
 import { METAINFO_FROM_TYPE } from '@/common/const/bank-providers';
 import InputField from '@/components/fields/input-field.vue';
@@ -906,17 +907,20 @@ const handleReconnect = async () => {
 
 const isManualAuthPending = ref(false);
 
-// TrueLayer connection awaiting its manual-return authorization journey.
+// TrueLayer connection awaiting its authorization journey: manual-return
+// journeys always confirm here; legacy v1 journeys can also be completed
+// from the details page when the automatic redirect landed but the exchange
+// failed (the confirmation page URL carries the OAuth code).
 const isPendingManualAuthorization = computed(
   () =>
     !!connectionDetails.value &&
     connectionDetails.value.providerType === BANK_PROVIDER_TYPE.TRUELAYER &&
-    connectionDetails.value.manualReturn === true &&
-    !connectionDetails.value.isActive,
+    !connectionDetails.value.isActive &&
+    connectionDetails.value.deactivationReason == null &&
+    (connectionDetails.value.manualReturn === true || connectionDetails.value.apiVersion === 'v1'),
 );
 
-// Legacy v1 connections confirm by pasting the redirect URL (its `code` query
-// param is what the backend exchanges for tokens); v3 just polls.
+// Legacy v1 connections confirm by pasting the code or the redirect URL; v3 just polls.
 const isV1ManualAuthorization = computed(
   () => isPendingManualAuthorization.value && connectionDetails.value?.apiVersion === 'v1',
 );
@@ -933,8 +937,11 @@ const handleManualAuthConfirm = async () => {
     isManualAuthPending.value = true;
     await completeTrueLayerAuthorization(
       connectionId.value,
-      isV1ManualAuthorization.value ? { redirectUrl: manualRedirectUrl.value.trim() } : undefined,
+      isV1ManualAuthorization.value
+        ? parseTrueLayerConfirmation(manualRedirectUrl.value, connectionDetails.value?.authUrl ?? undefined)
+        : undefined,
     );
+    localStorage.removeItem('pendingTrueLayerConnectionId');
     addSuccessNotification(t('pages.integrations.details.manualAuth.confirmed'));
     queryClient.invalidateQueries({
       queryKey: [VUE_QUERY_GLOBAL_PREFIXES.bankConnectionChange],

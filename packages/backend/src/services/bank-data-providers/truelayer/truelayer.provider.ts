@@ -52,9 +52,27 @@ import type {
  */
 const CONSOLE_REDIRECT_PAGE_URL = 'https://console.truelayer.com/redirect-page';
 
-const getRedirectUrl = (manualReturn = false) =>
+/**
+ * Validates the app origin the frontend reports (window.location.origin) so
+ * the authorization redirect lands on the exact origin that stored the
+ * pending-connection key — self-hosters reach one stack as both localhost and
+ * 127.0.0.1, and localStorage does not follow across origins.
+ */
+const sanitizeRedirectOrigin = (origin?: unknown): string | undefined => {
+  if (typeof origin !== 'string' || origin.length === 0) return undefined;
+  try {
+    const url = new URL(origin);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return undefined;
+    if (url.pathname !== '/' || url.search || url.hash) return undefined;
+    return url.origin;
+  } catch {
+    return undefined;
+  }
+};
+
+const getRedirectUrl = (manualReturn = false, origin?: string) =>
   process.env.TRUELAYER_REDIRECT_URL ||
-  (manualReturn ? CONSOLE_REDIRECT_PAGE_URL : `${FRONTEND_BASE_URL}/bank-callback`);
+  (manualReturn ? CONSOLE_REDIRECT_PAGE_URL : `${origin ?? FRONTEND_BASE_URL}/bank-callback`);
 
 /**
  * UK Open Banking recurring consents are granted for 180 days (TrueLayer's
@@ -166,7 +184,8 @@ export class TrueLayerProvider extends BaseBankDataProvider {
     const endUser = await this.getEndUser(userId);
     const manualReturn = credentials.manualReturn === true;
     const apiVersion = credentials.apiVersion === 'v1' ? 'v1' : 'v3';
-    const redirectUri = getRedirectUrl(manualReturn);
+    const redirectOrigin = sanitizeRedirectOrigin(credentials.redirectOrigin);
+    const redirectUri = getRedirectUrl(manualReturn, redirectOrigin);
 
     // v1 has no Connection-Id: the journey is a pure authorization link and
     // confirmation is a code exchange done by the callback.
@@ -215,6 +234,7 @@ export class TrueLayerProvider extends BaseBankDataProvider {
           : { tlPendingConnectionId, tlUserId }),
         authUrl,
         manualReturn,
+        tlRedirectOrigin: redirectOrigin,
         accountCount: 0,
         consecutiveAuthFailures: 0,
         deactivationReason: null,
@@ -376,7 +396,8 @@ export class TrueLayerProvider extends BaseBankDataProvider {
     }
 
     const apiClient = new TrueLayerApiClient(credentials);
-    const redirectUri = metadata.tlV1RedirectUri ?? getRedirectUrl(metadata.manualReturn === true);
+    const redirectUri =
+      metadata.tlV1RedirectUri ?? getRedirectUrl(metadata.manualReturn === true, metadata.tlRedirectOrigin);
     const tokens = await apiClient.exchangeV1Code({ code, redirectUri });
 
     const now = new Date();
@@ -488,7 +509,7 @@ export class TrueLayerProvider extends BaseBankDataProvider {
     // and are replaced when the fresh exchange lands.
     if (metadata.apiVersion === 'v1') {
       const state = randomUUID();
-      const redirectUri = getRedirectUrl(metadata.manualReturn === true);
+      const redirectUri = getRedirectUrl(metadata.manualReturn === true, metadata.tlRedirectOrigin);
       const authUrl = apiClient.buildV1AuthUrl({ redirectUri, state });
 
       connection.isActive = false;
@@ -505,7 +526,7 @@ export class TrueLayerProvider extends BaseBankDataProvider {
 
     const endUser = await this.getEndUser(connection.userId);
     const created = await apiClient.createDataConnection({
-      returnUri: getRedirectUrl(metadata.manualReturn === true),
+      returnUri: getRedirectUrl(metadata.manualReturn === true, metadata.tlRedirectOrigin),
       user: endUser,
       tlUserId: metadata.tlUserId,
     });

@@ -71,6 +71,17 @@ export const getTrueLayerPaymentsOnlyTokenMock = () =>
     HttpResponse.json(getMockedTrueLayerPaymentsOnlyTokenResponse()),
   );
 
+/** Apps predating the unified auth server: refresh on /connect/token 404s and
+ * must fall back to the legacy api/token endpoint (still served here). */
+export const getTrueLayerV1RefreshUnsupportedMock = () =>
+  http.post(`${TL_AUTH_BASE_URL}/connect/token`, async ({ request }) => {
+    const body = await readTokenBody(request);
+    if (body.grant_type === 'refresh_token') {
+      return HttpResponse.json({ error: 'not_found', message: 'unknown grant' }, { status: 404 });
+    }
+    return HttpResponse.json(getMockedTrueLayerTokenResponse());
+  });
+
 /** Override the poll result of a transactions request (completed/failed/pending shape). */
 export const getTrueLayerTransactionsResultMock = ({
   response,
@@ -151,20 +162,56 @@ export const getTrueLayerV1PagedTransactionsMock = ({ accountId, dupTxId }: { ac
   });
 };
 
+/** Token endpoints accept JSON (client_credentials) or form-encoded (v1 grants). */
+const readTokenBody = async (request: { text: () => Promise<string> }): Promise<Record<string, string>> => {
+  const raw = await request.text();
+  if (raw.trim().startsWith('{')) {
+    return (JSON.parse(raw) ?? {}) as Record<string, string>;
+  }
+  return Object.fromEntries(new URLSearchParams(raw));
+};
+
+/** Shared v1 refresh response: fixture tokens, rotation semantics. */
+const v1RefreshResponse = (refreshToken?: string) => {
+  if (refreshToken === EXPIRED_TL_V1_REFRESH_TOKEN) {
+    return HttpResponse.json({ error: 'invalid_grant', error_description: 'refresh token expired' }, { status: 400 });
+  }
+  if (refreshToken !== VALID_TL_V1_REFRESH_TOKEN && refreshToken !== ROTATED_TL_V1_REFRESH_TOKEN) {
+    return HttpResponse.json({ error: 'invalid_grant' }, { status: 400 });
+  }
+  return HttpResponse.json(
+    getMockedTrueLayerV1TokenResponse({
+      accessToken: 'tl-v1-access-token-rotated',
+      refreshToken: ROTATED_TL_V1_REFRESH_TOKEN,
+    }),
+  );
+};
+
 export const trueLayerHandlers = [
-  // POST /connect/token — client_credentials app token. Mirrors the real auth
-  // server: no scope parameter grants the app's full configured scope set.
+  // POST /connect/token — the auth server handling all grants: JSON
+  // client_credentials (app token, v3) and form-encoded authorization_code /
+  // refresh_token (legacy v1), mirroring the real endpoint.
   http.post(`${TL_AUTH_BASE_URL}/connect/token`, async ({ request }) => {
-    const body = await request.json().catch(() => null);
-    const { client_id, client_secret, grant_type } = (body ?? {}) as Record<string, string>;
-    if (
-      grant_type !== 'client_credentials' ||
-      client_id !== VALID_TL_CLIENT_ID ||
-      client_secret !== VALID_TL_CLIENT_SECRET
-    ) {
-      return problem(401, 'unauthenticated', 'invalid client');
+    const body = await readTokenBody(request);
+    const { client_id, client_secret, grant_type } = body;
+    if (client_id !== VALID_TL_CLIENT_ID || client_secret !== VALID_TL_CLIENT_SECRET) {
+      return grant_type === 'client_credentials'
+        ? problem(401, 'unauthenticated', 'invalid client')
+        : HttpResponse.json({ error: 'invalid_client' }, { status: 401 });
     }
-    return HttpResponse.json(getMockedTrueLayerTokenResponse());
+    if (grant_type === 'client_credentials') return HttpResponse.json(getMockedTrueLayerTokenResponse());
+    if (grant_type === 'authorization_code') {
+      if (!body.redirect_uri) return HttpResponse.json({ error: 'invalid_grant' }, { status: 400 });
+      if (body.code !== VALID_TL_V1_CODE) {
+        return HttpResponse.json(
+          { error: 'invalid_grant', error_description: 'authorization code expired' },
+          { status: 400 },
+        );
+      }
+      return HttpResponse.json(getMockedTrueLayerV1TokenResponse());
+    }
+    if (grant_type === 'refresh_token') return v1RefreshResponse(body.refresh_token);
+    return HttpResponse.json({ error: 'unsupported_grant_type' }, { status: 400 });
   }),
 
   // POST /v3/data-connections — start an authorization journey.
@@ -216,55 +263,14 @@ export const trueLayerHandlers = [
 
   // ---- Legacy Data API v1 (Unified Data Model) ----------------------------
 
-  // POST /exchange-oauth — authorization-code exchange. Only the fixture code
-  // is redeemable once conceptually; the mock accepts it on every call so
-  // idempotency tests can re-submit.
-  http.post(`${TL_API_BASE_URL}/exchange-oauth`, async ({ request }) => {
-    const body = await request.json().catch(() => null);
-    const { grant_type, code, client_id, client_secret, redirect_uri } = (body ?? {}) as Record<string, string>;
-    if (
-      grant_type !== 'authorization_code' ||
-      client_id !== VALID_TL_CLIENT_ID ||
-      client_secret !== VALID_TL_CLIENT_SECRET ||
-      !redirect_uri
-    ) {
-      return HttpResponse.json({ error: 'invalid_grant' }, { status: 400 });
-    }
-    if (code !== VALID_TL_V1_CODE) {
-      return HttpResponse.json(
-        {
-          error: 'invalid_grant',
-          error_description: 'authorization code expired',
-        },
-        { status: 400 },
-      );
-    }
-    return HttpResponse.json(getMockedTrueLayerV1TokenResponse());
-  }),
-
-  // POST /token grant_type=refresh_token — rotates the refresh token pair.
+  // POST /token — legacy refresh endpoint kept as the api-client's fallback
+  // when the auth server's /connect/token rejects the refresh grant.
   http.post(`${TL_API_BASE_URL}/token`, async ({ request }) => {
-    const body = await request.json().catch(() => null);
-    const { grant_type, refresh_token, client_id, client_secret } = (body ?? {}) as Record<string, string>;
-    if (
-      grant_type !== 'refresh_token' ||
-      client_id !== VALID_TL_CLIENT_ID ||
-      client_secret !== VALID_TL_CLIENT_SECRET
-    ) {
-      return HttpResponse.json({ error: 'invalid_client' }, { status: 401 });
+    const body = await readTokenBody(request);
+    if (body.grant_type !== 'refresh_token') {
+      return HttpResponse.json({ error: 'unsupported_grant_type' }, { status: 400 });
     }
-    if (refresh_token === EXPIRED_TL_V1_REFRESH_TOKEN) {
-      return HttpResponse.json({ error: 'invalid_grant', error_description: 'refresh token expired' }, { status: 400 });
-    }
-    if (refresh_token !== VALID_TL_V1_REFRESH_TOKEN && refresh_token !== ROTATED_TL_V1_REFRESH_TOKEN) {
-      return HttpResponse.json({ error: 'invalid_grant' }, { status: 400 });
-    }
-    return HttpResponse.json(
-      getMockedTrueLayerV1TokenResponse({
-        accessToken: 'tl-v1-access-token-rotated',
-        refreshToken: ROTATED_TL_V1_REFRESH_TOKEN,
-      }),
-    );
+    return v1RefreshResponse(body.refresh_token);
   }),
 
   http.get(`${TL_API_BASE_URL}/accounts`, ({ request }) => {

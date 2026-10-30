@@ -177,13 +177,7 @@
 </template>
 
 <script lang="ts" setup>
-import {
-  type BankProvider,
-  completeTrueLayerAuthorization,
-  connectProvider,
-  listProviders,
-} from '@/api/bank-data-providers';
-import { VUE_QUERY_CACHE_KEYS } from '@/common/const';
+import { completeTrueLayerAuthorization, connectProvider } from '@/api/bank-data-providers';
 import ClickToCopy from '@/components/common/click-to-copy.vue';
 import { DemoRestricted } from '@/components/demo';
 import ExternalLink from '@/components/external-link.vue';
@@ -191,10 +185,10 @@ import InputField from '@/components/fields/input-field.vue';
 import SelectField from '@/components/fields/select-field.vue';
 import UiButton from '@/components/lib/ui/button/Button.vue';
 import { useNotificationCenter } from '@/components/notification-center';
+import { parseTrueLayerConfirmation } from '@/js/helpers/truelayer';
 import { useUserStore } from '@/stores';
 import { BANK_PROVIDER_TYPE } from '@bt/shared/types';
 import { ExternalLinkIcon } from '@lucide/vue';
-import { useQuery } from '@tanstack/vue-query';
 import { storeToRefs } from 'pinia';
 import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
@@ -305,16 +299,13 @@ const claimed = ref<{
 
 const canConnect = computed(() => clientId.value.trim().length > 0 && clientSecret.value.trim().length > 0);
 
-// The redirect URI TrueLayer has been registered with MoneyMatter, echoed by the
-// backend so self-hosters see their own instance's callback URL.
-const { data: providers } = useQuery({
-  queryKey: VUE_QUERY_CACHE_KEYS.bankProviders,
-  queryFn: listProviders,
-  staleTime: Infinity,
-  placeholderData: [] as BankProvider[],
-});
-
-const callbackUrl = computed(() => providers.value?.find((p) => p.type === BANK_PROVIDER_TYPE.TRUELAYER)?.redirectUrl);
+// The redirect URI MoneyMatter registers for this journey: the authorization
+// request carries the origin the user is actually browsing (localhost and
+// 127.0.0.1 are separate origins with separate localStorage), so this is what
+// must be added to the TrueLayer console's Redirect URIs. A server-side
+// TRUELAYER_REDIRECT_URL override takes precedence but is echoed unchanged
+// only via the backend metadata.
+const callbackUrl = computed(() => `${window.location.origin}/bank-callback`);
 
 const handleConnectProvider = async () => {
   const id = clientId.value.trim();
@@ -338,6 +329,9 @@ const handleConnectProvider = async () => {
         environment: environment.value,
         manualReturn: returnMode.value === 'manual',
         apiVersion: apiVersion.value,
+        // The callback must land on the same origin that stores the pending
+        // connection id — localhost and 127.0.0.1 are distinct origins.
+        redirectOrigin: window.location.origin,
       });
       if (!response.authUrl) {
         addErrorNotification(t('pages.integrations.trueLayerConnector.errors.noAuthUrl'));
@@ -384,8 +378,11 @@ const handleManualConfirm = async () => {
     isLoading.value = true;
     await completeTrueLayerAuthorization(
       claimed.value.connectionId,
-      apiVersion.value === 'v1' ? { redirectUrl: pastedRedirectUrl.value.trim() } : undefined,
+      apiVersion.value === 'v1'
+        ? parseTrueLayerConfirmation(pastedRedirectUrl.value, claimed.value.authUrl)
+        : undefined,
     );
+    localStorage.removeItem('pendingTrueLayerConnectionId');
     addSuccessNotification(t('pages.integrations.trueLayerConnector.manualReturnConfirmed'));
     emit('connected');
   } catch (error) {
