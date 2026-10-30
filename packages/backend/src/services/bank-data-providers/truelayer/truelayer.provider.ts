@@ -106,7 +106,8 @@ const INITIAL_HISTORY_DAYS = 365;
 const ACCOUNT_TYPE_LABELS: Record<string, string> = {
   current: 'Current account',
   savings: 'Savings account',
-  credit: 'Credit account',
+  credit: 'Credit card',
+  charge: 'Charge card',
   cash: 'Cash account',
   pension: 'Pension',
   mortgage: 'Mortgage',
@@ -689,13 +690,14 @@ export class TrueLayerProvider extends BaseBankDataProvider {
     };
   }
 
-  /** Stable cross-connection identity: IBAN or sort-code+account-number. */
+  /** Stable cross-connection identity: IBAN, sort-code+account-number, or card PAN tail. */
   private accountIdentifierKey(account: TrueLayerApiAccount): string | null {
     for (const identifier of account.account_identifiers ?? []) {
       if (identifier.type === 'iban') return `iban:${identifier.iban.toUpperCase().replace(/\s+/g, '')}`;
       if (identifier.type === 'sort_code_account_number') {
         return `scan:${identifier.sort_code.replace(/\s+/g, '')}:${identifier.account_number.replace(/\s+/g, '')}`;
       }
+      if (identifier.type === 'card_pan_last4') return `card:${identifier.last_four}`;
     }
     return null;
   }
@@ -704,8 +706,13 @@ export class TrueLayerProvider extends BaseBankDataProvider {
     const typeLabel = ACCOUNT_TYPE_LABELS[account.account_type ?? ''] ?? 'Account';
     const last4 =
       account.account_identifiers?.find((i) => i.type === 'sort_code_account_number')?.account_number.slice(-4) ??
-      account.account_identifiers?.find((i) => i.type === 'iban')?.iban.slice(-4);
-    return last4 ? `${typeLabel} ••${last4}` : typeLabel;
+      account.account_identifiers?.find((i) => i.type === 'iban')?.iban.slice(-4) ??
+      account.account_identifiers?.find((i) => i.type === 'card_pan_last4')?.last_four;
+    const holder = account.account_holder_names?.[0];
+    // Card rows lead with the issuing name (e.g. "American Express"); bank
+    // rows show the product type.
+    const base = account.type === 'card' && holder ? holder : typeLabel;
+    return last4 ? `${base} ••${last4}` : base;
   }
 
   /**

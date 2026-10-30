@@ -123,7 +123,9 @@ export type TrueLayerAccountIdentifier =
       sort_code: string;
       account_number: string;
     }
-  | { type: 'iban'; iban: string };
+  | { type: 'iban'; iban: string }
+  /** Cards report only the masked PAN tail (v1 /data/v1/cards rows). */
+  | { type: 'card_pan_last4'; last_four: string };
 
 /** `account` and `card` share one shape today; cards lack currency in the schema. */
 export interface TrueLayerApiAccount {
@@ -239,11 +241,17 @@ export interface TrueLayerV1OAuthError {
   error_description?: string;
 }
 
-/** `GET /accounts` row. GB banks report account_number; IBANs surface via meta. */
+/** `GET /data/v1/accounts` and `GET /data/v1/cards` rows — card providers
+ * (e.g. Amex) answer 501 on /accounts and only serve products on /cards. */
 export interface TrueLayerV1Account {
-  account_id: string;
+  account_id?: string;
+  card_id?: string;
   display_name?: string;
   account_type?: string;
+  card_type?: string | null;
+  last_four_digits?: string | null;
+  name_on_card?: string | null;
+  expiry_date?: string | null;
   currency: string;
   account_number?: {
     /** GB sort code, six digits, may contain spaces/hyphens. */

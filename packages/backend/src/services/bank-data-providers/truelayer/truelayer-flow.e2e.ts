@@ -13,6 +13,8 @@ import {
   TRUELAYER_CARD_ID,
   TRUELAYER_CONNECTION_ID,
   TRUELAYER_V1_ACCOUNT_1_ID,
+  TRUELAYER_V1_ACCOUNT_2_ID,
+  TRUELAYER_V1_CARD_ID,
   getMockedTrueLayerAccount,
   getMockedTrueLayerCreateConnectionResponse,
   getMockedTrueLayerFailedTransactionsResultResponse,
@@ -34,6 +36,7 @@ import {
   getTrueLayerPendingAccountsMock,
   getTrueLayerTransactionsRequestErrorMock,
   getTrueLayerTransactionsResultMock,
+  getTrueLayerV1CardsOnlyMock,
   getTrueLayerV1ConsentDeadMock,
   getTrueLayerV1PagedTransactionsMock,
   getTrueLayerV1RefreshUnsupportedMock,
@@ -614,6 +617,7 @@ describe('TrueLayer Data Provider E2E', () => {
       expect(url.searchParams.get('response_type')).toBe('code');
       expect(url.searchParams.get('client_id')).toBe(VALID_TL_CLIENT_ID);
       expect(url.searchParams.get('scope')).toContain('offline_access');
+      expect(url.searchParams.get('scope')).toContain('cards');
       expect(url.searchParams.get('state')).toBeTruthy();
       expect(url.searchParams.get('nonce')).toBeTruthy();
       expect(url.searchParams.get('redirect_uri')).toContain('bank-callback');
@@ -775,6 +779,39 @@ describe('TrueLayer Data Provider E2E', () => {
       expect(first!.balance).toBeCloseTo(1523.45);
       expect(first!.currency).toBe('GBP');
       expect(first!.metadata!.accountKey).toBe('scan:560029:26207729');
+    });
+
+    it('serves card products when the provider has no accounts API (Amex-like)', async () => {
+      const { connectionId } = await helpers.truelayer.pairTrueLayerUserV1();
+      global.mswMockServer.use(...getTrueLayerV1CardsOnlyMock());
+
+      const { accounts } = await helpers.bankDataProviders.listExternalAccounts({ connectionId, raw: true });
+      expect(accounts.map((a: { externalId: string }) => a.externalId)).toEqual([TRUELAYER_V1_CARD_ID]);
+      const card = accounts[0]!;
+      expect(card.name).toBe('American Express ••3001');
+      expect(card.balance).toBeCloseTo(342.1);
+      expect(card.metadata!.accountKey).toBe('card:3001');
+
+      const { account, transactions } = await helpers.truelayer.connectV1AccountsAndSync({
+        connectionId,
+        accountId: TRUELAYER_V1_CARD_ID,
+      });
+      // Balance + transactions resolved via the /data/v1/cards fallback.
+      expect(transactions.length).toBe(3);
+      expect(transactions.every((t: { originalId: string }) => t.originalId.startsWith('np-v1tx-tlv1_card_amex'))).toBe(
+        true,
+      );
+      expect(account.currentBalance.toNumber()).toBeCloseTo(342.1);
+    });
+
+    it('ignores a 501 on the cards endpoint for account-only providers', async () => {
+      const { connectionId } = await helpers.truelayer.pairTrueLayerUserV1();
+
+      const { accounts } = await helpers.bankDataProviders.listExternalAccounts({ connectionId, raw: true });
+      expect(accounts.map((a: { externalId: string }) => a.externalId)).toEqual([
+        TRUELAYER_V1_ACCOUNT_1_ID,
+        TRUELAYER_V1_ACCOUNT_2_ID,
+      ]);
     });
 
     it('imports signed major-unit amounts mapped to income/expense', async () => {

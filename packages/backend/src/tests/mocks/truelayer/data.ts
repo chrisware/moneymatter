@@ -200,6 +200,8 @@ export const getMockedTrueLayerFailedTransactionsResultResponse = () => ({
 /** v1 amounts are DECIMAL MAJOR units — the mirror-image of the v3 fixtures. */
 export const TRUELAYER_V1_ACCOUNT_1_ID = 'tlv1_main';
 export const TRUELAYER_V1_ACCOUNT_2_ID = 'tlv1_savings';
+/** Card-only providers (Amex): products surface on /data/v1/cards only. */
+export const TRUELAYER_V1_CARD_ID = 'tlv1_card_amex';
 
 export const getMockedTrueLayerV1TokenResponse = ({
   expiresIn = 3600,
@@ -253,10 +255,38 @@ export const getMockedTrueLayerV1AccountsResponse = () => ({
   ],
 });
 
+/** `GET /data/v1/cards` row — UDM cards carry a masked PAN tail, no sort code. */
+export const getMockedTrueLayerV1Card = ({
+  cardId = TRUELAYER_V1_CARD_ID,
+  cardType = 'charge',
+  lastFour = '3001',
+  displayName = 'American Express',
+}: {
+  cardId?: string;
+  cardType?: string;
+  lastFour?: string;
+  displayName?: string;
+} = {}) => ({
+  card_id: cardId,
+  display_name: displayName,
+  card_type: cardType,
+  last_four_digits: lastFour,
+  name_on_card: 'C WARE',
+  expiry_date: '2029-04',
+  currency: 'GBP',
+  provider: { provider_name: 'American Express', provider_id: 'AMEX' },
+  update_timestamp: '2026-10-20T08:00:00Z',
+});
+
+export const getMockedTrueLayerV1CardsResponse = () => ({
+  results: [getMockedTrueLayerV1Card()],
+});
+
 /** Balance per account in major units (decimal pounds). */
 export const TRUELAYER_V1_BALANCES_MAJOR: Record<string, number> = {
   [TRUELAYER_V1_ACCOUNT_1_ID]: 1523.45,
   [TRUELAYER_V1_ACCOUNT_2_ID]: 50000,
+  [TRUELAYER_V1_CARD_ID]: 342.1,
 };
 
 export const getMockedTrueLayerV1BalanceResponse = (accountId: string) => {
