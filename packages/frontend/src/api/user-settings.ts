@@ -11,6 +11,7 @@ import type {
   SavedPivotView,
   SavedTransactionView,
   CurrencyDisplayPreference,
+  UnrealizedLossAlertsSettings,
 } from '@bt/shared/types';
 
 export interface DashboardWidgetConfig {
@@ -124,6 +125,7 @@ export interface UserSettingsSchema {
   payeePromotionThreshold?: 1 | 2 | 3;
   /** Day of month (1-28) a pay period starts on. Calendar month when unset. */
   payday?: number;
+  unrealizedLossAlerts?: UnrealizedLossAlertsSettings;
   ui?: UiSettings;
   subscriptions?: SubscriptionsSettings;
   savedPivotViews?: SavedPivotView[];

@@ -358,6 +358,9 @@
     "goalReached": {
       "title": "Goal reached: {name}",
       "message": "You've saved {amount}."
+    },
+    "unrealizedLossAlert": {
+      "title": "{count} holding crossed your loss alert | {count} holdings crossed your loss alert"
     }
   },
   "currencyNames": {
