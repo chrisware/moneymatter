@@ -93,8 +93,8 @@ function tokenGrantsDataAccess(jwt: string): boolean {
  * v1 (legacy): built authorization link → authorization code exchanged at
  * POST {auth}/connect/token (form-encoded) for a per-user bearer + rotating
  * refresh token (refreshed there, with the legacy POST /token as fallback);
- * data calls are plain GETs (/accounts, /accounts/{id}/balance,
- * /accounts/{id}/transactions) whose UDM payloads are mapped into the
+ * data calls are plain GETs (/data/v1/accounts, /data/v1/{id}/balance,
+ * /data/v1/{id}/transactions) whose UDM payloads are mapped into the
  * v3-shaped types here, so the provider's sync/mapping code is shared.
  *
  * Docs: https://docs.truelayer.com/reference/welcome-api-reference
@@ -313,10 +313,10 @@ export class TrueLayerApiClient {
     }
   }
 
-  /** GET /accounts (user bearer) — mapped into the shared v3-shaped account. */
+  /** GET /data/v1/accounts (user bearer) — mapped into the shared v3-shaped account. */
   async v1GetAccounts(userToken: string): Promise<TrueLayerApiAccount[]> {
     const data = await this.v1Request<TrueLayerV1AccountsResponse>(
-      { method: 'get', url: '/accounts' },
+      { method: 'get', url: '/data/v1/accounts' },
       userToken,
       'v1GetAccounts',
     );
@@ -332,10 +332,10 @@ export class TrueLayerApiClient {
     }));
   }
 
-  /** GET /accounts/{id}/balance — UDM reports DECIMAL MAJOR units; convert to minor. */
+  /** GET /data/v1/accounts/{id}/balance — UDM reports DECIMAL MAJOR units; convert to minor. */
   async v1GetAccountBalance(userToken: string, accountId: string): Promise<TrueLayerApiBalanceResponse> {
     const data = await this.v1Request<TrueLayerV1BalancesResponse>(
-      { method: 'get', url: `/accounts/${accountId}/balance` },
+      { method: 'get', url: `/data/v1/accounts/${accountId}/balance` },
       userToken,
       'v1GetAccountBalance',
     );
@@ -351,9 +351,9 @@ export class TrueLayerApiClient {
   }
 
   /**
-   * GET /accounts/{id}/transactions — signed major-unit amounts, no status
-   * field (pending rows are not served under this shape), RFC 3339 dates.
-   * Pages are followed via the `Link: <…>; rel="next"` header, with a hard
+   * GET /data/v1/accounts/{id}/transactions — signed major-unit amounts, no
+   * status field (pending rows live on a separate endpoint this policy does
+   * not consume), RFC 3339 dates. Pages are followed via the `Link: <…>; rel="next"` header, with a hard
    * ceiling so a bad cursor loop can't hang a sync.
    */
   async v1GetTransactions({
@@ -371,7 +371,7 @@ export class TrueLayerApiClient {
   }): Promise<TrueLayerApiTransaction[]> {
     const all: TrueLayerApiTransaction[] = [];
     let url: string | undefined =
-      `/accounts/${accountId}/transactions?from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}`;
+      `/data/v1/accounts/${accountId}/transactions?from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}`;
 
     for (let page = 0; page < V1_TX_MAX_PAGES && url; page += 1) {
       const response = await this.api.get<TrueLayerV1TransactionsResponse>(url, {

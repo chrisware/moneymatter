@@ -99,11 +99,11 @@ export const getTrueLayerTransactionsRequestErrorMock = ({ status = 503 }: { sta
 
 /** v1: consent expired/revoked — data endpoints answer 403 access_denied. */
 export const getTrueLayerV1ConsentDeadMock = () => [
-  http.get(`${TL_API_BASE_URL}/accounts`, () => HttpResponse.json({ error: 'access_denied' }, { status: 403 })),
-  http.get(`${TL_API_BASE_URL}/accounts/:accountId/balance`, () =>
+  http.get(`${TL_API_BASE_URL}/data/v1/accounts`, () => HttpResponse.json({ error: 'access_denied' }, { status: 403 })),
+  http.get(`${TL_API_BASE_URL}/data/v1/accounts/:accountId/balance`, () =>
     HttpResponse.json({ error: 'access_denied' }, { status: 403 }),
   ),
-  http.get(`${TL_API_BASE_URL}/accounts/:accountId/transactions`, () =>
+  http.get(`${TL_API_BASE_URL}/data/v1/accounts/:accountId/transactions`, () =>
     HttpResponse.json({ error: 'access_denied' }, { status: 403 }),
   ),
 ];
@@ -113,7 +113,7 @@ export const getTrueLayerV1TransactionsResultMock = ({
   response,
 }: {
   response: ReturnType<typeof getMockedTrueLayerV1TransactionsResponse>;
-}) => http.get(`${TL_API_BASE_URL}/accounts/:accountId/transactions`, () => HttpResponse.json(response));
+}) => http.get(`${TL_API_BASE_URL}/data/v1/accounts/:accountId/transactions`, () => HttpResponse.json(response));
 
 /** v1: two Link-header pages; first row on page 1 is `dupTx`, repeated on page 2. */
 export const getTrueLayerV1PagedTransactionsMock = ({ accountId, dupTxId }: { accountId: string; dupTxId: string }) => {
@@ -149,9 +149,9 @@ export const getTrueLayerV1PagedTransactionsMock = ({ accountId, dupTxId }: { ac
       },
     ],
   };
-  const nextUrl = `${TL_API_BASE_URL}/accounts/${accountId}/transactions?page=2`;
+  const nextUrl = `${TL_API_BASE_URL}/data/v1/accounts/${accountId}/transactions?page=2`;
   let servedFirst = false;
-  return http.get(`${TL_API_BASE_URL}/accounts/:accountId/transactions`, () => {
+  return http.get(`${TL_API_BASE_URL}/data/v1/accounts/:accountId/transactions`, () => {
     if (!servedFirst) {
       servedFirst = true;
       return HttpResponse.json(page1, {
@@ -273,19 +273,19 @@ export const trueLayerHandlers = [
     return v1RefreshResponse(body.refresh_token);
   }),
 
-  http.get(`${TL_API_BASE_URL}/accounts`, ({ request }) => {
+  http.get(`${TL_API_BASE_URL}/data/v1/accounts`, ({ request }) => {
     if (!isV1AuthorizedBearer(request)) return HttpResponse.json({ error: 'access_denied' }, { status: 403 });
     return HttpResponse.json(getMockedTrueLayerV1AccountsResponse());
   }),
 
-  http.get(`${TL_API_BASE_URL}/accounts/:accountId/balance`, ({ request, params }) => {
+  http.get(`${TL_API_BASE_URL}/data/v1/accounts/:accountId/balance`, ({ request, params }) => {
     if (!isV1AuthorizedBearer(request)) return HttpResponse.json({ error: 'access_denied' }, { status: 403 });
     const accountId = String(params.accountId ?? '');
     if (!(accountId in TRUELAYER_V1_BALANCES_MAJOR)) return problem(404, 'not_found', 'unknown account id');
     return HttpResponse.json(getMockedTrueLayerV1BalanceResponse(accountId));
   }),
 
-  http.get(`${TL_API_BASE_URL}/accounts/:accountId/transactions`, ({ request, params }) => {
+  http.get(`${TL_API_BASE_URL}/data/v1/accounts/:accountId/transactions`, ({ request, params }) => {
     if (!isV1AuthorizedBearer(request)) return HttpResponse.json({ error: 'access_denied' }, { status: 403 });
     const accountId = String(params.accountId ?? '');
     if (!(accountId in TRUELAYER_V1_BALANCES_MAJOR)) return problem(404, 'not_found', 'unknown account id');
