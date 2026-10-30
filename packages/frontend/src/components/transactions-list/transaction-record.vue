@@ -139,7 +139,7 @@
           <div :class="['flex items-center gap-1.5 text-sm tracking-wider', compact && 'min-w-0']">
             <AccountLogo v-if="accountFrom" :account="accountFrom" class="size-5 shrink-0" />
             <span class="line-clamp-1">{{ transferFromLabel }}</span>
-            <span class="shrink-0">{{ transferSeparator }}</span>
+            <ArrowRight :size="14" :class="['shrink-0 opacity-60', ownLegIsIncome && 'rotate-180']" />
             <AccountLogo v-if="accountTo" :account="accountTo" class="size-5 shrink-0" />
             <span class="line-clamp-1">{{ transferToLabel }}</span>
           </div>
@@ -490,9 +490,6 @@ const transferToAccount = computed(() =>
 
 const isLoanDestination = computed(() => transferToAccount.value?.accountCategory === ACCOUNT_CATEGORIES.loan);
 
-const transferSeparator = computed(() =>
-  transaction.value.transactionType === TRANSACTION_TYPES.expense ? '=>' : '<=',
-);
 // Accounts can be undefined when hidden from the caller — e.g. a recipient viewing a
 // transfer on a shared account whose other side lives in an unshared private account of
 // the owner. Fall back to a labeled placeholder rather than rendering "undefined".

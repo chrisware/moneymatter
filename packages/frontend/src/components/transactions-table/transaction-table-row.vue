@@ -66,7 +66,7 @@
           <span class="max-w-36 truncate">{{ accountFrom?.name }}</span>
           <PaymentIndicator :transaction="tx" />
           <template v-if="isTwoLegTransferRow">
-            <ArrowRightIcon :size="13" class="shrink-0 opacity-60" />
+            <ArrowRightIcon :size="13" :class="['shrink-0 opacity-60', ownLegIsIncome && 'rotate-180']" />
             <AccountLogo
               v-if="transferDestinationAccount"
               :account="transferDestinationAccount"
@@ -75,7 +75,7 @@
             <span class="max-w-36 truncate">{{ transferDestinationName }}</span>
           </template>
           <template v-else-if="isOutOfWalletTransfer">
-            <ArrowRightIcon :size="13" class="shrink-0 opacity-60" />
+            <ArrowRightIcon :size="13" :class="['shrink-0 opacity-60', ownLegIsIncome && 'rotate-180']" />
             <span class="text-muted-foreground">{{ $t('transactions.table.outOfWallet') }}</span>
           </template>
           <template v-else-if="isPortfolioLinked">
@@ -84,10 +84,7 @@
             <span class="max-w-36 truncate">{{ portfolioName }}</span>
           </template>
           <template v-else-if="ventureLinkData">
-            <ArrowRightIcon
-              :size="13"
-              :class="['shrink-0 opacity-60', tx.transactionType === TRANSACTION_TYPES.income && 'rotate-180']"
-            />
+            <ArrowRightIcon :size="13" :class="['shrink-0 opacity-60', ownLegIsIncome && 'rotate-180']" />
             <RocketIcon :size="13" class="text-app-transfer-color shrink-0" />
             <span :class="['max-w-36 truncate', ventureLinkData.isDealDeleted && 'text-muted-foreground line-through']">
               {{ ventureLinkData.dealName }}
@@ -352,6 +349,7 @@ const { accountsRecord } = storeToRefs(useAccountsStore());
 const { formatBaseCurrency } = useFormatCurrency();
 const { user } = storeToRefs(useUserStore());
 
+const ownLegIsIncome = computed(() => props.tx.transactionType === TRANSACTION_TYPES.income);
 const isTwoLegTransferRow = computed(() => isTwoLegTransfer(props.tx.transferNature));
 const isOutOfWalletTransfer = computed(
   () => props.tx.transferNature === TRANSACTION_TRANSFER_NATURE.transfer_out_wallet,
