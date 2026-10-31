@@ -378,7 +378,9 @@ describe('MCP serializers', () => {
 
     it.each([
       { overrides: { status: 'paused' }, expected: 'paused' },
-      { overrides: { achievedAt: '2026-10-01T00:00:00.000Z' }, expected: 'reached' },
+      // Pinned relative to now: a fixed date silently ages out of the
+      // `reachedHoldDays` window and flips the expected status.
+      { overrides: { achievedAt: new Date(Date.now() - 4 * 86_400_000).toISOString() }, expected: 'reached' },
     ])('reports the displayed status: $expected', ({ overrides, expected }) => {
       const [slim] = slimGoalsForMcp({ goals: [{ ...goal, ...overrides } as GoalModel], accountNames: new Map() });
 
