@@ -873,18 +873,20 @@ const handleReconnect = async () => {
 
     // Store connection ID for the OAuth callback page, keyed by provider so
     // /bank-callback can tell whose journey just returned.
-    const pendingKey =
-      connectionDetails.value?.providerType === BANK_PROVIDER_TYPE.TRUELAYER
-        ? 'pendingTrueLayerConnectionId'
-        : 'pendingEnableBankingConnectionId';
-    localStorage.setItem(pendingKey, String(connectionId.value));
+    const isTruelayerReconnect = connectionDetails.value?.providerType === BANK_PROVIDER_TYPE.TRUELAYER;
+    const manualReturnReconnect = isTruelayerReconnect && connectionDetails.value?.manualReturn;
+    // Manual-return journeys never land on /bank-callback; a pending key left
+    // behind would hijack the next Enable Banking callback.
+    if (!manualReturnReconnect) {
+      localStorage.setItem(
+        isTruelayerReconnect ? 'pendingTrueLayerConnectionId' : 'pendingEnableBankingConnectionId',
+        String(connectionId.value),
+      );
+    }
 
     // TrueLayer manual-return journeys end on TrueLayer's own page; keep the
     // app open and let the manual-authorization strip handle completion.
-    if (
-      connectionDetails.value?.providerType === BANK_PROVIDER_TYPE.TRUELAYER &&
-      connectionDetails.value?.manualReturn
-    ) {
+    if (manualReturnReconnect) {
       window.open(response.authUrl, '_blank', 'noopener');
       isReconnectPending.value = false;
       isReconnectDialogOpen.value = false;
@@ -938,9 +940,17 @@ const handleManualAuthConfirm = async () => {
       queryKey: [VUE_QUERY_GLOBAL_PREFIXES.bankConnectionChange],
     });
   } catch (err) {
-    addErrorNotification(err instanceof Error ? err.message : t('pages.integrations.details.manualAuth.confirmFailed'));
+    addErrorNotification(getErrorMessage(err) || t('pages.integrations.details.manualAuth.confirmFailed'));
   } finally {
     isManualAuthPending.value = false;
   }
+};
+
+/** Prefer the backend's actionable message (axios response body) over the raw HTTP error text. */
+const getErrorMessage = (err: unknown): string | undefined => {
+  const apiMessage = (err as { data?: { message?: string } })?.data?.message;
+  if (apiMessage) return apiMessage;
+  if (err instanceof Error && err.message) return err.message;
+  return undefined;
 };
 </script>

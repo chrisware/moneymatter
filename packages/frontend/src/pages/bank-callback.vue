@@ -22,7 +22,7 @@
 
         <p class="text-muted-foreground mb-2 text-sm">{{ error }}</p>
         <p class="mb-6 text-sm">
-          <DocsLink path="/import/bank-connections/#connect-with-enable-banking" />
+          <DocsLink :path="docsPath" />
         </p>
         <button
           @click="goToIntegrations"
@@ -79,6 +79,7 @@ const accountsStore = useAccountsStore();
 const isProcessing = ref(true);
 const error = ref('');
 const success = ref(false);
+const docsPath = ref('/import/bank-connections/#connect-with-enable-banking');
 
 // localStorage keys set by the connectors right before redirecting to the bank.
 const EB_KEY = 'pendi…nId';
@@ -129,6 +130,8 @@ onMounted(async () => {
 
   // Check for OAuth errors
   if (errorParam) {
+    // A leftover pending-TrueLayer key would otherwise hijack the next EB callback.
+    localStorage.removeItem(TL_KEY);
     error.value = errorDescription || errorParam || t('pages.bankCallback.errors.authorizationDenied');
     isProcessing.value = false;
     addErrorNotification(error.value);
@@ -141,7 +144,24 @@ onMounted(async () => {
     // carry stray query params) is never misread as EB.
     const truelayerConnectionId = localStorage.getItem(TL_KEY);
     if (truelayerConnectionId) {
-      await confirmTrueLayer(truelayerConnectionId, { code, state });
+      docsPath.value = '/import/bank-connections/#connect-with-truelayer';
+      if (!code || !state) {
+        // Bookmark/back-navigation on a finished or abandoned journey — the
+        // code is single-use, so drop the key instead of POSTing empty params.
+        localStorage.removeItem(TL_KEY);
+        error.value = t('pages.bankCallback.errors.missingParameters');
+        isProcessing.value = false;
+        addErrorNotification(error.value);
+        return;
+      }
+      try {
+        await confirmTrueLayer(truelayerConnectionId, { code, state });
+      } catch (err) {
+        // The exchange consumed the one-time code (or rejected it); keeping the
+        // key would hijack every later Enable Banking callback.
+        localStorage.removeItem(TL_KEY);
+        throw err;
+      }
       localStorage.removeItem(TL_KEY);
       await finalize(truelayerConnectionId);
       return;

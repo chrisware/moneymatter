@@ -137,14 +137,26 @@ const readTokenBody = async (request: { text: () => Promise<string> }): Promise<
   return Object.fromEntries(new URLSearchParams(raw));
 };
 
+/**
+ * Single-use refresh-token chain: TrueLayer invalidates the presented refresh
+ * token on every rotation. Replaying an already-rotated one must fail, so the
+ * mock can reproduce the concurrent-refresh race the provider serializes with
+ * a per-connection lock. Fresh code exchanges start a new chain.
+ */
+let currentRefreshToken: string = VALID_TL_V1_REFRESH_TOKEN;
+
 /** Shared refresh response: fixture tokens, rotation semantics. */
 const refreshResponse = (refreshToken?: string) => {
   if (refreshToken === EXPIRED_TL_V1_REFRESH_TOKEN) {
     return HttpResponse.json({ error: 'invalid_grant', error_description: 'refresh token expired' }, { status: 400 });
   }
-  if (refreshToken !== VALID_TL_V1_REFRESH_TOKEN && refreshToken !== ROTATED_TL_V1_REFRESH_TOKEN) {
-    return HttpResponse.json({ error: 'invalid_grant' }, { status: 400 });
+  if (refreshToken !== currentRefreshToken) {
+    return HttpResponse.json(
+      { error: 'invalid_grant', error_description: 'refresh token already rotated' },
+      { status: 400 },
+    );
   }
+  currentRefreshToken = ROTATED_TL_V1_REFRESH_TOKEN;
   return HttpResponse.json(
     getMockedTrueLayerV1TokenResponse({
       accessToken: 'tl-v1-access-token-rotated',
@@ -174,6 +186,8 @@ export const trueLayerHandlers = [
           { status: 400 },
         );
       }
+      // New consent = new token chain.
+      currentRefreshToken = VALID_TL_V1_REFRESH_TOKEN;
       return HttpResponse.json(getMockedTrueLayerV1TokenResponse());
     }
     if (grant_type === 'refresh_token') return refreshResponse(body.refresh_token);

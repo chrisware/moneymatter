@@ -1,3 +1,4 @@
+import { requestContext } from '@common/request-context';
 import { t } from '@i18n/index';
 import { BadRequestError, ForbiddenError, NotFoundError, ServiceUnavailableError } from '@js/errors';
 import { logger } from '@js/utils/logger';
@@ -304,6 +305,18 @@ export class TrueLayerApiClient {
     return rows;
   }
 
+  /**
+   * Bearer header for data-plane calls. TrueLayer's unattended-call throttling
+   * keys off `X-PSU-IP`: without it, background syncs hit the per-day cap and
+   * surface as 429. Mirrors the Enable Banking `psu-ip-address` handling.
+   */
+  private dataHeaders(userToken: string): Record<string, string> {
+    const headers: Record<string, string> = { Authorization: `Bearer ${userToken}` };
+    const psu = requestContext.getContext()?.psu;
+    if (psu?.ipAddress) headers['X-PSU-IP'] = psu.ipAddress;
+    return headers;
+  }
+
   /** GET /data/v1/{kind}/{id}/balance — UDM reports DECIMAL MAJOR units; convert to minor. */
   async getAccountBalance(userToken: string, accountId: string): Promise<TrueLayerBalanceResponse> {
     // Cards are addressed under /data/v1/cards; the id alone doesn't say which,
@@ -324,13 +337,21 @@ export class TrueLayerApiClient {
     if (!data.ok) throw data.error;
 
     const balance: TrueLayerUdmBalance | undefined = data.data.results?.[0];
+    if (!balance) {
+      // Async/empty 2xx shapes (202 `{status:'Queued', results_uri}`, empty
+      // results list) carry no balance — fabricating 0.00 would clobber the
+      // stored one. Signal "unavailable" so callers skip the write.
+      throw new ServiceUnavailableError({
+        message: t({ key: 'bankDataProviders.truelayer.providerError' }),
+      });
+    }
     return {
-      currency: balance?.currency ?? '',
-      current_balance_in_minor: majorToMinorUnits(balance?.current ?? 0, balance?.currency ?? 'GBP'),
+      currency: balance.currency,
+      current_balance_in_minor: majorToMinorUnits(balance.current, balance.currency),
       available_balance_in_minor:
-        balance?.available === undefined ? null : majorToMinorUnits(balance.available, balance.currency),
+        balance.available === undefined ? null : majorToMinorUnits(balance.available, balance.currency),
       overdraft_in_minor:
-        balance?.overdraft === undefined ? null : majorToMinorUnits(balance.overdraft, balance.currency),
+        balance.overdraft === undefined ? null : majorToMinorUnits(balance.overdraft, balance.currency),
     };
   }
 
@@ -377,7 +398,7 @@ export class TrueLayerApiClient {
 
     for (let page = 0; page < TX_MAX_PAGES && url; page += 1) {
       const response = await this.api.get<TrueLayerUdmTransactionsResponse>(url, {
-        headers: { Authorization: `Bearer ${userToken}` },
+        headers: this.dataHeaders(userToken),
       });
       const mapped = (response.data.results ?? []).map((tx) => udmToTransaction(tx));
       all.push(...mapped);
@@ -396,7 +417,7 @@ export class TrueLayerApiClient {
     method: string,
   ): Promise<{ ok: true; data: T } | { ok: false; unsupported: boolean; error: Error }> {
     try {
-      const response = await this.api.get<T>(url, { headers: { Authorization: `Bearer ${userToken}` } });
+      const response = await this.api.get<T>(url, { headers: this.dataHeaders(userToken) });
       return { ok: true, data: response.data };
     } catch (error) {
       const status = axios.isAxiosError(error) ? error.response?.status : undefined;

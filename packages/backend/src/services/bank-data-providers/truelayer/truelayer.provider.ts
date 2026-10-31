@@ -105,7 +105,6 @@ interface PersisterCounters {
   createdTransactionIds: string[];
   mergedIntoPlannedCount: number;
   skippedPreLinkCount: number;
-  skippedPendingCount: number;
 }
 
 /**
@@ -335,7 +334,14 @@ export class TrueLayerProvider extends BaseBankDataProvider {
    * Fresh bearer token for the connection: cached while valid, otherwise
    * refreshed — TrueLayer rotates the refresh token on every renewal, so the
    * returned pair is written back to the encrypted credentials column.
+   *
+   * Refreshes are serialized per connection: the queue runs account syncs
+   * concurrently, and without a lock two jobs would race the same bearer —
+   * the loser replays the rotated-out refresh token, gets `invalid_grant`,
+   * and a healthy connection is falsely marked dead (spurious reconnect).
    */
+  private readonly v1TokenLocks = new Map<string, Promise<string>>();
+
   private async ensureV1UserToken({
     connection,
     credentials,
@@ -343,7 +349,28 @@ export class TrueLayerProvider extends BaseBankDataProvider {
     connection: BankDataProviderConnections;
     credentials: TrueLayerCredentials;
   }): Promise<string> {
-    const stored = credentials.v1Token;
+    const inflight = this.v1TokenLocks.get(connection.id);
+    if (inflight) return inflight;
+    const task = this.ensureV1UserTokenUnlocked({ connection, credentials }).finally(() => {
+      this.v1TokenLocks.delete(connection.id);
+    });
+    this.v1TokenLocks.set(connection.id, task);
+    return task;
+  }
+
+  private async ensureV1UserTokenUnlocked({
+    connection,
+    credentials,
+  }: {
+    connection: BankDataProviderConnections;
+    credentials: TrueLayerCredentials;
+  }): Promise<string> {
+    // Re-read from the row inside the lock: a preceding caller may have just
+    // rotated the pair while this one was queued.
+    const latest =
+      ((await this.getDecryptedCredentials(connection.id)) as unknown as TrueLayerCredentials | undefined) ??
+      credentials;
+    const stored = latest.v1Token;
     if (!stored?.accessToken || !stored.refreshToken) {
       throw new BadRequestError({
         message: t({ key: 'bankDataProviders.truelayer.noActiveConnection' }),
@@ -354,11 +381,11 @@ export class TrueLayerProvider extends BaseBankDataProvider {
       return stored.accessToken;
     }
 
-    const apiClient = new TrueLayerApiClient(credentials);
+    const apiClient = new TrueLayerApiClient(latest);
     const tokens = await apiClient.refreshToken(stored.refreshToken);
 
     connection.setEncryptedCredentials({
-      ...credentials,
+      ...latest,
       v1Token: {
         accessToken: tokens.access_token,
         refreshToken: tokens.refresh_token ?? stored.refreshToken,
@@ -450,14 +477,17 @@ export class TrueLayerProvider extends BaseBankDataProvider {
     }
 
     const existing = (await this.getDecryptedCredentials(connectionId)) as unknown as TrueLayerCredentials | undefined;
+    const clientIdRotated = !existing || existing.clientId !== newCredentials.clientId;
 
     connection.setEncryptedCredentials({
       clientId: newCredentials.clientId,
       clientSecret: newCredentials.clientSecret,
-      environment: newCredentials.environment ?? 'production',
+      // Update payloads carry only the secret pair; keep the stored environment
+      // so "Update Credentials" can't silently flip a sandbox connection to prod.
+      environment: newCredentials.environment ?? existing?.environment ?? 'production',
       // User tokens are consented against the old app; a rotated client_id
       // invalidates them, so the user must reauthorize instead.
-      v1Token: existing?.v1Token && existing.clientId === newCredentials.clientId ? existing.v1Token : undefined,
+      v1Token: existing?.v1Token && !clientIdRotated ? existing.v1Token : undefined,
     });
 
     // New object reference so Sequelize persists the JSONB reset.
@@ -465,9 +495,12 @@ export class TrueLayerProvider extends BaseBankDataProvider {
       ...(connection.metadata as TrueLayerMetadata),
     };
     metadata.consecutiveAuthFailures = 0;
-    metadata.deactivationReason = null;
+    // With the consented tokens dropped, the connection must read as expired:
+    // syncs otherwise throw noActiveConnection (a BadRequest the auth-failure
+    // engine ignores) forever without ever nudging the user to reconnect.
+    metadata.deactivationReason = clientIdRotated ? DEACTIVATION_REASON.AUTH_FAILURE : null;
     connection.metadata = metadata;
-    connection.isActive = true;
+    connection.isActive = !clientIdRotated;
 
     await connection.save();
   }
@@ -620,7 +653,7 @@ export class TrueLayerProvider extends BaseBankDataProvider {
       to,
     });
 
-    return transactions.filter((tx) => tx.status === 'settled').map((tx) => this.toProviderTransaction(tx));
+    return transactions.map((tx) => this.toProviderTransaction(tx));
   }
 
   private toProviderTransaction(tx: TrueLayerTransaction): ProviderTransaction {
@@ -670,6 +703,7 @@ export class TrueLayerProvider extends BaseBankDataProvider {
           access: 'unscoped-internal',
           balanceAdjustments: 'include',
           where: { accountId: account.id, time: { [Op.lte]: new Date() } },
+          order: [['time', 'DESC']],
         });
 
         const to = new Date();
@@ -721,7 +755,7 @@ export class TrueLayerProvider extends BaseBankDataProvider {
           0
         ) {
           logger.info(
-            `[TrueLayer] Sync: ${counters.createdTransactionIds.length} created, ${counters.mergedIntoPlannedCount} planned confirmed, ${counters.skippedPreLinkCount} pre-link skipped, ${counters.skippedPendingCount} pending deferred for account ${account.id}`,
+            `[TrueLayer] Sync: ${counters.createdTransactionIds.length} created, ${counters.mergedIntoPlannedCount} planned confirmed, ${counters.skippedPreLinkCount} pre-link skipped for account ${account.id}`,
           );
           await notifyPlannedConfirmations({
             userId: connection.userId,
@@ -867,10 +901,9 @@ export class TrueLayerProvider extends BaseBankDataProvider {
 
   /**
    * Shared row-persistence loop for sync and period load; mirrors the Akahu
-   * persister (two-tier dedup by `originalId` then `externalData.originalSource`)
-   * with TrueLayer's quirk: PENDING rows are never persisted — settled rows
-   * arrive under a different id, so persisting both would duplicate. The
-   * incremental overlap window guarantees the settled twin is picked up.
+   * persister (two-tier dedup by `originalId` then `externalData.originalSource`).
+   * The v1 UDM transactions endpoint serves booked rows only, so nothing is
+   * deferred here.
    */
   private async createPersister({
     connection,
@@ -892,7 +925,6 @@ export class TrueLayerProvider extends BaseBankDataProvider {
     const createdTransactionIds: string[] = [];
     let mergedIntoPlannedCount = 0;
     let skippedPreLinkCount = 0;
-    let skippedPendingCount = 0;
     const checkpoint = this.createBaseCurrencyLockCheckpoint({
       userId: connection.userId,
     });
@@ -905,11 +937,6 @@ export class TrueLayerProvider extends BaseBankDataProvider {
 
       for (const tx of ascending) {
         await checkpoint();
-
-        if (tx.status !== 'settled') {
-          skippedPendingCount += 1;
-          continue;
-        }
 
         const existingTx = await findOneTransaction({
           planned: 'exclude',
@@ -981,7 +1008,6 @@ export class TrueLayerProvider extends BaseBankDataProvider {
         createdTransactionIds,
         mergedIntoPlannedCount,
         skippedPreLinkCount,
-        skippedPendingCount,
       }),
     };
   }

@@ -156,6 +156,56 @@ describe('TrueLayer Data Provider E2E', () => {
       expect(connection.isActive).toBe(false);
     });
 
+    it("rejects another user submitting the owner's valid callback (ownership guard)", async () => {
+      const { connectionId, authUrl } = await helpers.bankDataProviders.connectProvider({
+        providerType: BANK_PROVIDER_TYPE.TRUELAYER,
+        credentials: {
+          clientId: VALID_TL_CLIENT_ID,
+          clientSecret: VALID_TL_CLIENT_SECRET,
+        },
+        raw: true,
+      });
+      const state = new URL(authUrl!).searchParams.get('state')!;
+
+      const second = await helpers.signUpSecondUser();
+      await helpers.asUser({
+        cookies: second.cookies,
+        fn: () =>
+          helpers.makeRequest({
+            method: 'post',
+            url: '/user/currencies/base',
+            payload: { currencyCode: global.BASE_CURRENCY.code },
+          }),
+      });
+
+      const foreign = await helpers.asUser({
+        cookies: second.cookies,
+        fn: () =>
+          helpers.makeRequest({
+            method: 'post',
+            url: `/bank-data-providers/${BANK_PROVIDER_TYPE.TRUELAYER}/oauth-callback`,
+            payload: { connectionId, code: VALID_TL_V1_CODE, state },
+          }),
+      });
+      // Indistinguishable from a nonexistent connection — and no token was
+      // exchanged: the row stays pending-inactive.
+      expect(foreign.status).toEqual(ERROR_CODES.NotFoundError);
+
+      const { connection } = await helpers.bankDataProviders.getConnectionDetails({
+        connectionId,
+        raw: true,
+      });
+      expect(connection.isActive).toBe(false);
+
+      // The real owner's journey still completes afterwards.
+      const ownerResult = await helpers.makeRequest({
+        method: 'post',
+        url: `/bank-data-providers/${BANK_PROVIDER_TYPE.TRUELAYER}/oauth-callback`,
+        payload: { connectionId, code: VALID_TL_V1_CODE, state },
+      });
+      expect(ownerResult.status).toEqual(200);
+    });
+
     it('activates on code exchange with a ~90-day consent window', async () => {
       const { connectionId } = await helpers.truelayer.pairTrueLayerUser();
 
@@ -645,6 +695,30 @@ describe('TrueLayer Data Provider E2E', () => {
       expect(creds.v1Token?.accessToken).toBe('tl-v1-access-token-rotated');
       expect(new Date(creds.v1Token!.accessExpiresAt).getTime()).toBeGreaterThan(Date.now());
       expect(account.id).toBeTruthy();
+    });
+
+    it('serializes concurrent refreshes so a rotating-token replay never deactivates the connection', async () => {
+      // The account-sync queue runs up to 5 jobs per connection in parallel;
+      // two bearers expiring together used to race the single-use refresh
+      // grant — the loser replayed the rotated-out token, got invalid_grant,
+      // and the auth-failure engine marked a healthy connection dead.
+      const { connectionId } = await helpers.truelayer.pairTrueLayerUser();
+      await expireStoredAccessToken(connectionId);
+
+      const provider = bankProviderRegistry.get(BANK_PROVIDER_TYPE.TRUELAYER) as TrueLayerProvider;
+      const [first, second] = await Promise.all([
+        provider.fetchAccounts(connectionId),
+        provider.fetchAccounts(connectionId),
+      ]);
+
+      expect(first.length).toBeGreaterThan(0);
+      expect(second.length).toBeGreaterThan(0);
+
+      const { connection } = await helpers.bankDataProviders.getConnectionDetails({
+        connectionId,
+        raw: true,
+      });
+      expect(connection.isActive).toBe(true);
     });
 
     it('falls back to the legacy /token endpoint when the auth server lacks the refresh grant', async () => {
