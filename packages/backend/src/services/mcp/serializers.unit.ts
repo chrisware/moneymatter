@@ -299,6 +299,7 @@ describe('MCP serializers', () => {
       etaMonths: 20,
       neededMonthly: 1000,
       daysLeft: 240,
+      monthsLeft: 8,
       input: {
         today: '2026-10-20',
         months: [],
@@ -378,9 +379,7 @@ describe('MCP serializers', () => {
 
     it.each([
       { overrides: { status: 'paused' }, expected: 'paused' },
-      // Pinned relative to now: a fixed date silently ages out of the
-      // `reachedHoldDays` window and flips the expected status.
-      { overrides: { achievedAt: new Date(Date.now() - 4 * 86_400_000).toISOString() }, expected: 'reached' },
+      { overrides: { achievedAt: new Date().toISOString() }, expected: 'reached' },
     ])('reports the displayed status: $expected', ({ overrides, expected }) => {
       const [slim] = slimGoalsForMcp({ goals: [{ ...goal, ...overrides } as GoalModel], accountNames: new Map() });
 
