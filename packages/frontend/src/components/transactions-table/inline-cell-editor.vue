@@ -23,20 +23,22 @@
       <CategorySelectField
         v-else
         ref="dropdownFieldRef"
-        v-model="form.category"
+        :model-value="form.category"
         :values="categories"
         :categories-map="isSharedWithCaller ? sharedCategories.map.value : undefined"
         :shared-owner-username="ownerHandle ?? undefined"
         :placeholder="$t('dialogs.manageTransaction.form.selectCategoryPlaceholder')"
         label-key="name"
+        @update:model-value="pickCategory"
       />
     </template>
     <PayeeSelectField
       v-else-if="column === TABLE_COLUMN.payee"
       ref="dropdownFieldRef"
-      v-model="form.payeeId"
+      :model-value="form.payeeId"
       :account-id="tx.accountId"
       :owner-scoped="isSharedWithCaller"
+      @update:model-value="pickPayee"
     />
     <div v-else-if="column === TABLE_COLUMN.amount" class="relative">
       <FormattedAmountField
@@ -152,7 +154,7 @@ import { useAccountAccess } from '@/composable/use-account-access';
 import { CUSTOM_BREAKPOINTS, useWindowBreakpoints } from '@/composable/window-breakpoints';
 import { useAccountsStore, useCategoriesStore } from '@/stores';
 import { findFormattedCategoryById } from '@/stores/categories/helpers';
-import type { TransactionModel, UpdateTransactionBody } from '@bt/shared/types';
+import type { RecordId, TransactionModel, UpdateTransactionBody } from '@bt/shared/types';
 import { createReusableTemplate } from '@vueuse/core';
 import { XIcon } from '@lucide/vue';
 import { storeToRefs } from 'pinia';
@@ -260,6 +262,18 @@ const onPointerDownOutside = (event: PointerDownOutsideEvent) => {
 
 const save = () => {
   if (canSave.value) emit('save', body.value!);
+};
+
+const pickCategory = (category: typeof form.category) => {
+  form.category = category;
+  if (category?.id === props.tx.categoryId) emit('close');
+  else save();
+};
+
+const pickPayee = (payeeId: string | null) => {
+  form.payeeId = payeeId as RecordId | null;
+  if (canSave.value) save();
+  else emit('close');
 };
 
 // Capture phase: field triggers act on Enter keydown before it could bubble here.
