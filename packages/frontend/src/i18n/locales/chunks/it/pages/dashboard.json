@@ -81,9 +81,17 @@
       },
       "expensesStructure": {
         "title": "Struttura delle uscite",
+        "incomeTitle": "Struttura delle entrate",
         "today": "Oggi",
         "vsPreviousPeriod": "rispetto al periodo precedente",
-        "viewButton": "Visualizza"
+        "viewButton": "Visualizza",
+        "back": "Indietro",
+        "openInAnalytics": "Apri in Dati analitici",
+        "metric": {
+          "expenses": "Spese",
+          "income": "Entrata"
+        },
+        "seeTransactions": "Vedi transazioni"
       },
       "latestTransactions": {
         "title": "Ultime transazioni",
@@ -315,6 +323,28 @@
         "ended": "Terminato",
         "create": "Crea un tracker"
       },
+      "tagAnalysis": {
+        "title": "Analisi etichette",
+        "noTagsTitle": "Nessuna etichetta selezionata",
+        "noTagsDescription": "Scegliere le etichette da confrontare nelle impostazioni del widget.",
+        "ofIncome": "delle entrate",
+        "remaining": "Non assegnato",
+        "targetTooltip": "Obiettivo: {value}%",
+        "settings": {
+          "tagsLabel": "Etichette",
+          "tagsPlaceholder": "Seleziona etichette",
+          "targetsLabel": "Obiettivi, %",
+          "targetsNoneSet": "Nessuno impostato",
+          "targetsSetCount": "{set} di {total} impostati",
+          "targetsEmpty": "Aggiungere prima le etichette per impostarne gli obiettivi",
+          "targetPlaceholder": "Nessuna",
+          "percentBaseLabel": "Percentuale di",
+          "percentBaseTags": "Etichette selezionate",
+          "percentBaseIncome": "Entrata",
+          "includeTransfersLabel": "Includere i trasferimenti",
+          "includeTransfersDescription": "Conteggiare come spesa i trasferimenti verso i propri conti e portafogli"
+        }
+      },
       "emptyState": "Nessun dato nell'intervallo di tempo selezionato.",
       "registry": {
         "balanceTrend": {
@@ -399,6 +429,10 @@
             "showReached": "Mostra obiettivi raggiunti"
           },
           "reachedSection": "Raggiunti"
+        },
+        "tagAnalysis": {
+          "name": "Analisi etichette",
+          "description": "Vedere come si distribuisce la spesa tra le etichette scelte, ad esempio necessità, desideri e risparmi"
         }
       }
     },

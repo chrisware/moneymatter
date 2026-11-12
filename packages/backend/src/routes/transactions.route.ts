@@ -9,6 +9,7 @@ import bulkDelete from '@controllers/transactions.controller/bulk-delete';
 import bulkUpdate from '@controllers/transactions.controller/bulk-update';
 import createTransaction from '@controllers/transactions.controller/create-transaction';
 import deleteTransaction from '@controllers/transactions.controller/delete-transaction';
+import extractMessage from '@controllers/transactions.controller/extract-message';
 import extractReceipt from '@controllers/transactions.controller/extract-receipt';
 import getPlannedSummary from '@controllers/transactions.controller/get-planned-summary';
 import getPortfolioLink from '@controllers/transactions.controller/get-portfolio-link';
@@ -31,6 +32,7 @@ import bulkScanTransferRecommendations from '@controllers/transactions.controlle
 import dismissTransferSuggestion from '@controllers/transactions.controller/transfer-linking/dismiss-transfer-suggestion';
 import getTransferRecommendations from '@controllers/transactions.controller/transfer-linking/get-transfer-recommendations';
 import unlinkTransferTransactions from '@controllers/transactions.controller/transfer-linking/unlink-transfer-transactions';
+import * as trash from '@controllers/transactions.controller/trash';
 import unlinkFromPortfolio from '@controllers/transactions.controller/unlink-from-portfolio';
 import updateTransaction from '@controllers/transactions.controller/update-transaction';
 import { authenticateSessionOrUploadToken } from '@middlewares/attachment-upload-auth';
@@ -38,7 +40,7 @@ import { authenticateSession } from '@middlewares/better-auth';
 import { blockDemoUsers } from '@middlewares/block-demo-users';
 import { checkBaseCurrencyLock } from '@middlewares/check-base-currency-lock';
 import { requireFeature, requireFeatureOrTrial } from '@middlewares/entitlements';
-import { attachmentUploadRateLimit } from '@middlewares/rate-limit';
+import { attachmentUploadRateLimit, messageExtractionRateLimit } from '@middlewares/rate-limit';
 import express, { Router } from 'express';
 
 const router = Router({});
@@ -82,6 +84,7 @@ router.post(
   express.raw({ type: 'application/octet-stream', limit: ATTACHMENT_MAX_FILE_BYTES }),
   extractReceipt,
 );
+router.post('/extract-message', requireFeature(FEATURES.invoice_matching), messageExtractionRateLimit, extractMessage);
 router.post(
   '/match-invoice/candidates',
   // No AI and no try spent, so a user whose free tries are gone can still correct the
@@ -105,6 +108,10 @@ router.post(
   checkBaseCurrencyLock,
   reconciliation.checkStuckPendingController,
 );
+
+router.get('/trash', trash.getTrashController);
+router.post('/trash/restore', checkBaseCurrencyLock, trash.restoreTrashController);
+router.post('/trash/delete', checkBaseCurrencyLock, trash.deleteTrashController);
 
 // Split routes
 router.delete('/splits/:splitId', checkBaseCurrencyLock, deleteSplit);

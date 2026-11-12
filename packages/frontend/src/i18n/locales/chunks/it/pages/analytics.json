@@ -84,7 +84,7 @@
       }
     },
     "trends": {
-      "subtitle": "Confrontare spese, entrate e risparmi con il periodo precedente.",
+      "subtitle": "Confrontare spese ed entrate con il periodo precedente.",
       "metrics": {
         "expenses": "Spese",
         "income": "Entrata",
@@ -95,27 +95,63 @@
         "comparisonPeriod": "Periodo precedente",
         "cumulativeNote": "Totale cumulativo fino a questo punto"
       },
+      "scope": {
+        "label": "Ambito categorie",
+        "all": "Tutte le categorie",
+        "up": "Livello superiore",
+        "transactions": "Transazioni",
+        "count": "{count} categoria | {count} categorie",
+        "more": "+{count}",
+        "allExcept": "Tutte tranne {list}",
+        "clear": "Pulisci"
+      },
       "categoryBreakdown": {
         "title": "Ripartizione per categoria",
         "noData": "Nessun dato per questo periodo",
         "viewAll": "Visualizza tutte le categorie",
-        "moreCount": "altre {count}"
+        "moreCount": "altre {count}",
+        "noSubcategory": "{name} · nessuna sottocategoria",
+        "byLevel": "Per livello",
+        "detail": "Dettaglio",
+        "others": "Altri"
+      },
+      "hero": {
+        "vsPrevious": "{percent}% rispetto al periodo precedente",
+        "same": "Uguale al periodo precedente"
+      },
+      "overTime": {
+        "title": "Nel tempo",
+        "cumulative": "Cumulativo",
+        "perPeriod": "Per periodo",
+        "granularity": {
+          "monthly": "Mensile",
+          "quarterly": "Trimestrale",
+          "yearly": "Annualmente"
+        }
+      },
+      "transactionsCard": {
+        "title": "Transazioni",
+        "largest": "Più elevate",
+        "recent": "Recenti"
       },
       "monthlyComparison": {
-        "title": "Confronto mensile",
         "allCategories": "Tutte le categorie",
         "average": "Medio",
         "total": "Totale",
-        "vsLastMonth": "rispetto al mese precedente",
-        "viewTransactions": "Visualizza transazioni"
-      },
-      "cumulativeProgress": {
-        "title": "Andamento cumulativo"
+        "vsPrevious": {
+          "monthly": "rispetto al mese scorso",
+          "quarterly": "rispetto al trimestre scorso",
+          "yearly": "rispetto all'anno scorso"
+        },
+        "show": {
+          "monthly": "Mostra questo mese",
+          "quarterly": "Mostra trimestre",
+          "yearly": "Mostra anno"
+        }
       },
       "filters": {
         "button": "Filtri",
         "title": "Filtri",
-        "categories": "Categorie",
         "include": "Includi",
         "exclude": "Escludi",
         "accounts": "Conti",

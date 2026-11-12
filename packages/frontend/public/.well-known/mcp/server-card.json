@@ -144,7 +144,7 @@
     {
       "name": "bulk_delete_transactions",
       "toolset": "core",
-      "description": "Permanently delete many transactions at once, by ids or by filters. Requires finance:delete scope."
+      "description": "Move many transactions to Trash at once, by ids or by filters. Requires finance:delete scope."
     },
     {
       "name": "bulk_update_transactions",
@@ -214,7 +214,7 @@
     {
       "name": "delete_transaction",
       "toolset": "core",
-      "description": "Permanently delete a transaction by ID. Requires finance:delete scope."
+      "description": "Move a transaction to Trash by ID. Requires finance:delete scope."
     },
     {
       "name": "get_account",
@@ -1139,7 +1139,7 @@
     {
       "name": "replace_venture_event_links",
       "toolset": "ventures",
-      "description": "Replace the whole set of bank transactions linked to a venture event: every current link is removed (each transaction gets its original state back), then the given transactions are linked under the rules of link_transactions_to_venture_event (same currency, not already linked elsewhere, sum equal to the event's lpNetAmount). Requires finance:write scope."
+      "description": "Replace the whole set of bank transactions linked to a venture event: every current link is removed (each transaction gets its original state back), then the given transactions are linked under the rules of link_transactions_to_venture_event (same currency, not already linked elsewhere). Requires finance:write scope."
     },
     {
       "name": "update_venture_deal",
